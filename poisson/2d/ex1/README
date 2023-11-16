@@ -1,0 +1,34 @@
+This simple test program demonstrates how to implement a PDE solver
+with DOLFIN.
+
+The problem first needs to be stated in variational form: Find u in V
+such that
+
+    a(v, u) = L(v)    for all v in V.
+
+DOLFIN-HPC uses the FEniCS Form Compiler FFC to process variational forms.
+The bilinear form a and the linear for L are here specified in the file
+
+    Poisson.ufl
+    Projection.ufl
+
+They can be compiled using the command
+
+    ffc -l dolfin_hpc Poisson.ufl
+    ffc -l dolfin_hpc Projection.ufl
+
+to create the files 
+
+    Poisson.h
+    Projection.h
+
+included in the main program.
+
+Then the program is compiled using 'make' to generate the executable 'demo'.
+The program requires an integer as a commnd line argument that defines how many times
+the mesh should be refined. 
+
+    srun -n 1 ./demo 0
+
+The executable can be used by python script convergence.py to check converegnce behaviour.
+python3 convergence.py

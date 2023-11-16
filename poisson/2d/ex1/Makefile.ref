@@ -1,0 +1,21 @@
+CFLAGS  = -DNDEBUG -Wall -Wextra -pedantic -std=c++14 -g -O2 -I/pdc/software/22.06/other/dolfin_hpc/ufc2-hpc/build/include/ -I/cfs/klemming/pdc/software/dardel/22.06/other/petsc/3.16.2/include -I/cfs/klemming/pdc/software/dardel/22.06/other/petsc/3.16.2/arch-linux-c-opt/include -I/cfs/klemming/home/a/ashbho/installations/dolfin-hpc/include # `pkg-config --cflags dolfin`
+LIBS    = -L/cfs/klemming/home/a/ashbho/installations/dolfin-hpc/lib -L/pdc/software/22.06/other/petsc/3.16.2/lib/ -L/cfs/klemming/pdc/software/dardel/22.06/other/petsc/3.16.2/arch-linux-c-opt/lib -L/opt/cray/pe/mpich/8.1.17/ofi/gnu/9.1/lib -L/opt/cray/pe/libsci/21.08.1.2/GNU/9.1/x86_64/lib -L/opt/cray/pe/dsmml/0.2.2/dsmml/lib -L/opt/cray/xpmem/2.3.2-2.2_9.4__g93dd7ee.shasta/lib64 -L/opt/cray/pe/gcc/11.2.0/snos/lib/gcc/x86_64-suse-linux/11.2.0 -L/opt/cray/pe/gcc/11.2.0/snos/lib64 -L/opt/cray/pe/gcc/11.2.0/snos/lib -ldolfin -Wl,-rpath,/cfs/klemming/pdc/software/dardel/22.06/other/petsc/3.16.2/arch-linux-c-opt/lib -Wl,-rpath,/opt/cray/pe/mpich/8.1.17/ofi/gnu/9.1/lib -Wl,-rpath,/opt/cray/pe/libsci/21.08.1.2/GNU/9.1/x86_64/lib -Wl,-rpath,/opt/cray/pe/dsmml/0.2.2/dsmml/lib -Wl,-rpath,/opt/cray/xpmem/2.3.2-2.2_9.4__g93dd7ee.shasta/lib64 -Wl,-rpath,/opt/cray/pe/gcc/11.2.0/snos/lib/gcc/x86_64-suse-linux/11.2.0 -Wl,-rpath,/opt/cray/pe/gcc/11.2.0/snos/lib64 -Wl,-rpath,/opt/cray/pe/gcc/11.2.0/snos/lib -lpetsc -lHYPRE -lcmumps -ldmumps -lsmumps -lzmumps -lmumps_common -lpord -lscalapack -lptesmumps -lptscotchparmetis -lptscotch -lptscotcherr -lesmumps -lscotch -lscotcherr -lstdc++ -ldl -lxpmem -lgfortran -lm -lsci_gnu_82_mpi -lsci_gnu_82 -lmpifort_gnu_91 -lmpi_gnu_91 -ldsmml -lgfortran -lquadmath -lpthread -lm -lgcc_s -lrt -lquadmath -lstdc++ -ldl -lparmetis -lmetis -lz #`pkg-config --libs dolfin`
+#CFLAGS  = `pkg-config --cflags dolfin`
+#LIBS    = `pkg-config --libs dolfin`
+CXX     = `pkg-config --variable=compiler dolfin`
+
+DEST    = demo
+OBJECTS = main.o
+
+all: $(DEST)
+
+install:
+
+clean:
+	-rm -f *.o core *.core $(OBJECTS) $(DEST) *.vtu *.pvtu *.pvd
+
+$(DEST): $(OBJECTS)
+	$(CXX) -o $@ $(OBJECTS) $(CFLAGS) $(LIBS)
+
+.cpp.o:
+	$(CXX) $(CFLAGS) -c $<

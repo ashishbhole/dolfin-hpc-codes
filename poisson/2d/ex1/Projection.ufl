@@ -1,0 +1,7 @@
+deg = 4
+element = FiniteElement("Lagrange", "triangle", degree=deg)
+v = TestFunction(element)
+u = TrialFunction(element)
+uex = Coefficient(element)
+a = v*u*dx
+L = v*uex*dx
