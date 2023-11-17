@@ -64,32 +64,15 @@ File file("solution.pvd");
 
 int main(int argc, char **argv)
 { 
-  // specify number of time the mesh shoould be refined	
-  uint num_refine = 0;
-
-  // take num_refine from command line argument
-  if (argc > 1)
-  {
-      for (uint i = 0; argv[1][i] != '\0'; i++)
-      {
-         if (!isdigit(argv[1][i]))
-         {
-           cout << "Bad character in command line argument\n";
-           exit(1);
-         }
-      }
-      num_refine = std::__cxx11::stoi(argv[1]);
-  }
-  else
-  {
-      cout << "Error: missing command line argument\n";
-      exit(1);
-  }
-    
   dolfin_init(argc, argv);
 
-  uint Np = pow(2,num_refine)*32;
-  UnitSquare mesh(Np, Np);
+  // Parallel file writing does not work with in-built meshes.
+  //uint Np = pow(2,num_refine)*32;
+  //UnitSquare mesh(Np, Np);
+  //
+  // Exporting mesh for parallel file writing. Furthermore, refinement
+  // looks buggy. It is better to export meshes (in bin format).
+  Mesh mesh("UnitSquareMesh_32x32.bin");
 
   // Set boundary conditions
   Analytic<DirichletFunction> u0(mesh);
