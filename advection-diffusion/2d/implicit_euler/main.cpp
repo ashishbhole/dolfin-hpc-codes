@@ -100,14 +100,14 @@ int main(int argc, char **argv)
   Constant tau(0.0*h/(sqrt(pow(speed_x,2)+pow(speed_y,2))));
 
   // See the declaration in the header file
-  AdvectionDiffusion::BilinearForm a(mesh);
+  AdvectionDiffusion::BilinearForm a(mesh, adv_x, adv_y, tau, dt);
   Function u1(a.trial_space());
   Function un(a.trial_space());
 
   // interpolate the initial condition to initialize the problem
   un << ui;
 
-  AdvectionDiffusion::LinearForm L(mesh, un, adv_x, adv_y, tau, dt);
+  AdvectionDiffusion::LinearForm L(mesh, un);
   // declare and assemble FE Matrix and vector
   Matrix A;
   Vector b;

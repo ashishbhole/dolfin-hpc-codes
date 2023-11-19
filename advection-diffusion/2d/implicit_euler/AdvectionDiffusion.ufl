@@ -16,7 +16,7 @@ dt    = Coefficient(constant) # Time step
 
 speed = as_vector([adv_x, adv_y])
 
-# Explicit Euler's method
-res = v*u1*dx - v*un*dx + dt*( v*dot(speed, grad(un)) ) * dx + tau*(dot(speed, grad(un)) * dot(speed, grad(v))) * dx
+# Implicit Euler's method
+res = v*u1*dx - v*un*dx + dt*( v*dot(speed, grad(u1)) ) * dx + tau*(dot(speed, grad(u1)) * dot(speed, grad(v))) * dx 
 a = lhs(res)
 L = rhs(res)
