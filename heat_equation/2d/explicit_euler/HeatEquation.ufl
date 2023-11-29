@@ -1,0 +1,13 @@
+# Copyright (C) 2023 Ashish Bhole.
+# Licensed under the GNU LGPL Version 2.1.
+deg = 3
+element = FiniteElement("Lagrange", triangle, degree=deg)
+v  = TestFunction(element)     # Test function
+u  = TrialFunction(element)    # Value at t_n+1
+u0 = Coefficient(element)      # Value at t_n
+constant = FiniteElement("Discontinuous Lagrange", triangle, 0)
+dt = Coefficient(constant)
+nu = Coefficient(constant)
+res = v*u*dx - v*u0*dx + dt*nu*dot(grad(v), grad(u0))*dx
+a = lhs(res)
+L = rhs(res)
