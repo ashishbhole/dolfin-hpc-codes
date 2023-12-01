@@ -1,12 +1,12 @@
 # Copyright (C) 2023 Ashish Bhole.
 # Licensed under the GNU LGPL Version 2.1.
 
-deg = 1
+deg = 3
 element = FiniteElement("Lagrange", triangle, degree=deg)
 
 v  = TestFunction(element)     # Test function
 u1 = TrialFunction(element)    # Value at t_n
-un = Coefficient(element)      # Value at t_n-1
+u0 = Coefficient(element)      # Value at t_n-1
 
 constant = FiniteElement("Discontinuous Lagrange", triangle, 0)
 adv_x = Coefficient(constant)
@@ -16,7 +16,7 @@ dt    = Coefficient(constant) # Time step
 
 speed = as_vector([adv_x, adv_y])
 
-# Implicit Euler's method
-res = v*u1*dx - v*un*dx + dt*( v*dot(speed, grad(u1)) ) * dx + tau*(dot(speed, grad(u1)) * dot(speed, grad(v))) * dx 
+# Explicit Euler's method
+res = v*u1*dx - v*u0*dx + dt*( v*dot(speed, grad(u1)) ) * dx + tau*(dot(speed, grad(u1)) * dot(speed, grad(v))) * dx
 a = lhs(res)
 L = rhs(res)

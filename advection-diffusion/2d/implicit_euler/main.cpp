@@ -16,6 +16,8 @@
 #define IO
 
 #include "AdvectionDiffusion.h"
+#include "Projection.h"
+
 #include <sstream>
 #include <dolfin.h>
 
@@ -67,17 +69,16 @@ int main(int argc, char **argv)
   dolfin_init(argc, argv);
 
   // Parallel file writing does not work with in-built meshes.
-  //uint Np = pow(2,num_refine)*32;
-  //UnitSquare mesh(Np, Np);
+  //UnitSquare mesh(100, 100);
   //
   // Exporting mesh for parallel file writing. Furthermore, refinement
   // looks buggy. It is better to export meshes (in bin format).
   Mesh mesh("UnitSquareMesh_32x32.bin");
 
   // Set boundary conditions
-  Analytic<DirichletFunction> u0(mesh);
+  Analytic<DirichletFunction> ub(mesh);
   DirichletBoundary boundary;
-  DirichletBC bc(u0, mesh, boundary);
+  DirichletBC bc(ub, mesh, boundary);
 
   // For initial conditions 
   double t = 0.0;
@@ -88,6 +89,20 @@ int main(int argc, char **argv)
   Gaussian.t = t;
   Analytic<ExactSolution> ui( mesh, Gaussian);
 
+  // Note that interpolation operation u0<<ui only works for degree=1.
+  // Hence projection of the analytic function on FE space is used as
+  // the initial condition.
+  Projection::BilinearForm a1(mesh);
+  Projection::LinearForm L1(mesh, ui);
+  Matrix A1;
+  Vector b1;
+  a1.assemble(A1, true);
+  L1.assemble(b1, true);
+  Function u0(a1.trial_space());
+  KrylovSolver solver(bicgstab, bjacobi);
+  solver.solve(A1, u0.vector(), b1);
+  u0.sync();
+  
   // time step computation
   double Nc = 0.05;
   double h = MeshQuality(mesh).h_max;
@@ -102,24 +117,16 @@ int main(int argc, char **argv)
   // See the declaration in the header file
   AdvectionDiffusion::BilinearForm a(mesh, adv_x, adv_y, tau, dt);
   Function u1(a.trial_space());
-  Function un(a.trial_space());
-
-  // interpolate the initial condition to initialize the problem
-  un << ui;
-
-  AdvectionDiffusion::LinearForm L(mesh, un);
-  // declare and assemble FE Matrix and vector
+  AdvectionDiffusion::LinearForm L(mesh, u0);
   Matrix A;
   Vector b;
   a.assemble(A, true);
 
-  // specify linear solver
-  KrylovSolver solver(bicgstab, bjacobi);
   uint step = 0;
 
   // write the initial condition to the solution file
   #ifdef IO
-  file << un;
+  file << u0;
   #endif
   
   while (t < Tfinal)
@@ -130,21 +137,26 @@ int main(int argc, char **argv)
     bc.apply(A, b, a);
     solver.solve(A, u1.vector(), b);
     u1.sync();
-    un = u1;
+    u0 = u1;
     t +=tstep;
     step += 1;
     #ifdef IO
     if (step%10 == 0) file << u1; 
     #endif
   }
-  // Get the exatc solution at Tfinal
+  // Get the exact solution at Tfinal
   Gaussian.t = Tfinal;
   Analytic<ExactSolution> uex( mesh, Gaussian);
-  // interpolate the exact solution to FE function
-  Function ue(a.trial_space());
-  ue << uex;
+  Projection::LinearForm L2(mesh, uex);
+  Vector b2;
+  L2.assemble(b2, true);
+  solver.solve(A1, u0.vector(), b2);
+  u0.sync();
+
+  file << u0;
+
   // Compute the numerical error in u1 as : u1 = u1 - ue
-  u1 -= ue;
+  u1 -= u0;
   message( "h, Error l1, l2, linf norm: %e %e %e %e", h, u1.vector().norm(l1), u1.vector().norm(l2), u1.vector().norm(linf) );
 
   dolfin_finalize();
