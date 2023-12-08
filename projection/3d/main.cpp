@@ -56,10 +56,9 @@ int main()
   f.eval(f_values, x);
   message("f(x) = %g", f_values[0]);
 
-  // This throws GTSInterface missing error
-  // Evaluate discrete function g (projection of f)
-  //g.eval(g_values, x);
-  //message("g(x) = %g", g_values[0]);
+  // Evaluate discrete function g (projection of f)  
+  g.eval(g_values, x);
+  message("g(x) = %g", g_values[0]);
 
   dolfin_finalize();
 
