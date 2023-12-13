@@ -10,7 +10,7 @@
 # Compile this.ufl with FFC: ffc -l dolfin_hpc Projection.ufl.
 
 deg = 2
-element = FiniteElement("Lagrange", "triangle", deg)
+element = FiniteElement("Lagrange", "triangle", degree=deg)
 
 v = TestFunction(element)
 u = TrialFunction(element)
