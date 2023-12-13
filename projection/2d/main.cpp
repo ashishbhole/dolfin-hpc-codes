@@ -24,10 +24,9 @@ int main()
   dolfin_init();
 
   // Create mesh and a point in the mesh
-  UnitSquare mesh(8, 8);
-  mesh.refine();
+  UnitSquare mesh(10, 10);
 
-  real x[2] = {0.1, 0.1};
+  real x[2] = {0.2, 0.1};
   real f_values[1] = {0.0};
   real g_values[1] = {0.0};
 
