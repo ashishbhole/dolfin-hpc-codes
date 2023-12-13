@@ -10,7 +10,8 @@
 # The bilinear.ufl for classical linear elasticity (Navier).
 # Compile this.ufl with FFC: ffc -l dolfin Elasticity.ufl.
 
-element = VectorElement("Lagrange", "tetrahedron", 1)
+deg = 1
+element = VectorElement("Lagrange", "tetrahedron", degree=deg)
 
 v = TestFunction(element)
 u = TrialFunction(element)
@@ -29,6 +30,6 @@ def epsilon(v):
 def sigma(v):
     return 2*(mu* epsilon(v)) + (lmbda* (tr(epsilon(v))* Identity(len(v))))
 
-res = rho*inner(v, u)*dx - 2*rho*inner(v, un)*dx + rho*inner(v, u_old)*dx + dt*dt*inner(grad(v), sigma(u))*dx - rho*dt*dt*inner(v, f)*dx
+res = rho*inner(v, u)*dx - 2*rho*inner(v, un)*dx + rho*inner(v, u_old)*dx + dt*dt*inner(grad(v), sigma(u))*dx - dt*dt*inner(v, f)*dx
 a = lhs(res)
 L = rhs(res)

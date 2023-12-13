@@ -8,23 +8,12 @@
 #define IO
 
 #include "Elasticity.h"
-
 #include <dolfin.h>
 
 using namespace dolfin;
 
-real tstep = 0.0001; //1.0/5000.0;
-real Tfinal = 5.0;
-
-struct Null : public Value< Null, 3 >
-{
-  void eval( real * values, const real * x ) const
-  {
-    values[0] = 0.;
-    values[1] = 0.;
-    values[2] = 0.;
-  }
-};
+real tstep =  0.25 * 1e-6; // based on the frquency of excitation
+real Tfinal = 0.15 * 1e-3;
 
 struct ConstantFunction : public Value< ConstantFunction, 1, 3 >
 {
@@ -44,17 +33,16 @@ struct ConstantFunction : public Value< ConstantFunction, 1, 3 >
 };
 
 // Dirichlet boundary condition for clamp at left end
-struct Harmonic : public Value< Harmonic, 3 >
+struct Source : public Value< Source, 3 >
 {
-  Harmonic(): t(0), freq(2.0) {}
+  Source(): t(0), freq(400000.0) {}
   void eval( real * values, const real * x ) const
   {
-    if(x[2] == 0.0 && ( sqrt(x[0]*x[0]+x[1]*x[1]) <= 0.0036775 ))
+    if( fabs(x[2]) < DOLFIN_EPS && ( sqrt(x[0]*x[0]+x[1]*x[1]) <= (0.0036775 + fabs(DOLFIN_EPS)) ) ) 
     {
       values[0] = 0.0;
       values[1] = 0.0;
-      values[2] = 0.0;
-      if(t<0.15) values[2] = 1e-4*sin((freq/0.15)*DOLFIN_PI*t);
+      values[2] = 1e3*sin(2.0*freq*DOLFIN_PI*t);
     }
     else
     {
@@ -64,6 +52,16 @@ struct Harmonic : public Value< Harmonic, 3 >
     }
   }
   double t, freq;  
+};
+
+struct DirichletFunction : public Value<DirichletFunction, 3>
+{
+  void eval(real *value, const real *x) const
+  {
+    value[0] = 0.0;
+    value[1] = 0.0;
+    value[2] = 0.0;
+  }
 };
 
 struct DirichletBoundary : public SubDomain
@@ -79,24 +77,25 @@ int main()
   dolfin_init();
 
   // Read mesh
-  Mesh mesh("./square_in_disc_3d.bin");
-  // Create right-hand side
-  Analytic< Null > f( mesh );
+  Mesh mesh("./disc_in_disc_3d.bin");
 
-  // Set up boundary condition at left end
-  Harmonic signal; 
+  Analytic<DirichletFunction> u0(mesh);
   DirichletBoundary boundary;
-
+  DirichletBC bc(u0, mesh, boundary);
+  
   double t = 0.0;
   // Set elasticity parameters
-  real const                   density=100.0; // 2780.0;
-  real const                   E  = 10.0; // 7.31e10;
+  real const                   density=2780.0; // 100.0; // 2780.0;
+  real const                   E  = 7.31e10; // 10.0; // 7.31e10;
   real const                   nu = 0.33;
   ConstantFunction             mu_( E / ( 2 * ( 1 + nu ) ) );
   Analytic< ConstantFunction > mu( mesh, mu_ );
   ConstantFunction lambda_( E * nu / ( ( 1 + nu ) * ( 1 - 2 * nu ) ) );
   Analytic< ConstantFunction > lambda( mesh, lambda_ );
 
+  Source src;
+  Analytic<Source> f( mesh, src);
+  
   Constant dt(tstep);
   Constant rho(density );
 
@@ -105,28 +104,24 @@ int main()
   Function u(a.trial_space());
   Function un(a.trial_space());
   Function u_old(a.trial_space());
-  Elasticity::LinearForm   L( mesh, un, u_old, f, dt, rho );
+  Function ff(a.trial_space());
+  Elasticity::LinearForm L( mesh, un, u_old, f, dt, rho );
 
   // Solve PDE
   Matrix A;
   Vector b;
-  a.assemble( A, true );
-  L.assemble( b, true );
-  //LinearSolver solver;
+  a.assemble(A, true);
   KrylovSolver solver(bicgstab, bjacobi);  
-  solver.solve( A, u.vector(), b );
 
   // Save solution to VTK format
   File file( "elasticity.pvd" ); 
-  file << u;
-
   uint step = 0;
   while (t < Tfinal)
   {
     if (t+tstep > Tfinal) dt = Tfinal - t;
-    signal.t=t;
-    Analytic<Harmonic> sense_signal( mesh, signal);
-    DirichletBC       bc( sense_signal, mesh, boundary );
+    src.t=t;
+    Analytic<Source> f( mesh, src);
+    Elasticity::LinearForm L(mesh, un, u_old, f, dt, rho);
     L.assemble(b, step==0);
     bc.apply(A, b, a);
     solver.solve(A, u.vector(), b);
@@ -136,6 +131,7 @@ int main()
     #ifdef IO
     if (step%100 == 0) file << u;
     #endif
+    message( "no_ot_tstep, tstep, t, l2 norm: %d %e %e %e", step, tstep, t, u.vector().norm(l2) );
     t +=tstep;
     step += 1;
   }
