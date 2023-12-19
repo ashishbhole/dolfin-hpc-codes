@@ -1,0 +1,73 @@
+# Copyright (c) 2005 Johan Jansson (johanjan@math.chalmers.se)
+# Licensed under the GNU LGPL Version 2.1
+#
+# Modified by Anders Logg 2006-2007
+# Modified by Garth N. Wells 2008
+#
+# First added:  2005
+# Last changed: 2008-05-21
+#
+# The bilinear.ufl for classical linear elasticity (Navier).
+# Compile this.ufl with FFC: ffc -l dolfin Elasticity.ufl.
+
+dim = 2
+deg = 1
+cell= "triangle"
+element = VectorElement("Lagrange", cell, degree=deg)
+v = TestFunction(element)
+u = TrialFunction(element)
+
+u_old = Coefficient(element)
+v_old = Coefficient(element)
+a_old = Coefficient(element)
+f     = Coefficient(element)
+
+constant = FiniteElement("Discontinuous Lagrange", cell, degree=0)
+dt    = Coefficient(constant) 
+rho   = Coefficient(constant) 
+mu    = Coefficient(constant) 
+lmbda = Coefficient(constant) 
+
+alpha_m = Coefficient(constant) 
+alpha_f = Coefficient(constant) 
+gamma   = 0.5+alpha_f-alpha_m
+beta    = (gamma+0.5)**2/4.0
+
+# Rayleigh damping coefficients
+eta_m = Coefficient(constant) 
+eta_k = Coefficient(constant) 
+
+def avg(x_old, x_new, alpha):
+    return alpha*x_old + (1-alpha)*x_new
+
+# Mass form
+def m(u, v):
+    return rho*inner(u, v)*dx
+
+# Rayleigh Damping:
+def c(u, v):
+    return eta_m*rho*inner(u, v)*dx + eta_k*inner(sigma(u), sym(grad(v)))*dx
+
+# Strain Matrix
+def epsilon(v):
+    return 0.5*(grad(v) + transpose(grad(v)))
+
+# Elastic stiffness form
+def sigma(v):
+    return 2.0*(mu * epsilon(v)) + (lmbda * (tr(epsilon(v)) * Identity(len(v))))
+
+def k(u, v):
+    return inner(sigma(u), sym(grad(v)))*dx
+
+# Work of external forces
+def Wext(f, v):
+    return inner(v, f)*dx # ds(dim)
+
+# Update formulae for acceleration and velocity
+a_new = (u-u_old-dt*v_old)/beta/dt**2 - (1-2*beta)/2/beta*a_old 
+v_new = v_old + dt*((1-gamma)*a_old + gamma*a_new)
+
+res = m(avg(a_old, a_new, alpha_m), v) + c(avg(v_old, v_new, alpha_f), v) \
+    + k(avg(u_old, u, alpha_f),     v) - Wext(f, v)
+a = lhs(res)
+L = rhs(res)
