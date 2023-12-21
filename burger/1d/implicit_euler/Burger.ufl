@@ -1,0 +1,23 @@
+# Copyright (C) 2023 Ashish Bhole.
+# Licensed under the GNU LGPL Version 2.1.
+
+deg = 1
+cell = interval
+element = FiniteElement("Lagrange", cell, degree=deg)
+x = SpatialCoordinate(cell)
+
+v = TestFunction(element)     # Test function
+u0 = Coefficient(element)      # Value at t_n-1
+du = TrialFunction(element)
+
+constant = FiniteElement("Discontinuous Lagrange", cell, 0)
+dt = Coefficient(constant) # Time step
+
+# Implicit Euler's method
+A = u0
+B = -u0*Dx(u0, 0)
+A_u = diff(A, u0)
+B_u = diff(B, u0)
+res = v*A_u*du*dx - dt*v*B_u*du*dx - dt*v*B*dx
+a = lhs(res)
+L = rhs(res)
