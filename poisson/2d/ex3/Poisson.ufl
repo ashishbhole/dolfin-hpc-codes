@@ -1,0 +1,18 @@
+# Compile this.ufl with FFC: ffc -l dolfin Poisson.ufl.
+
+deg = 1
+DRT = FiniteElement("DRT", "triangle", degree=deg)
+CG  = FiniteElement("Lagrange", "triangle", degree=deg)
+W = DRT * CG
+
+(sigma, u) = TrialFunctions(W)
+(tau, v) = TestFunctions(W)
+
+f = Coefficient(CG)
+g = Coefficient(CG)
+
+# use line breaks, errors due to long lines are not explicit
+res = dot(sigma, tau)*dx + dot(grad(u), tau)*dx \
++ dot(sigma, grad(v))*dx + f*v*dx + g*v*ds
+a = lhs(res)
+L = rhs(res)

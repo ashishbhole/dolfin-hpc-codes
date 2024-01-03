@@ -1,0 +1,11 @@
+# Compile this.ufl with FFC: ffc -l dolfin Poisson.ufl.
+
+deg = 1
+element = FiniteElement("Lagrange", "triangle", degree=deg)
+v = TestFunction(element)
+u = TrialFunction(element)
+f = Coefficient(element)
+g = Coefficient(element)
+
+a = inner(grad(v), grad(u))*dx
+L = v*f*dx + g*v*ds
