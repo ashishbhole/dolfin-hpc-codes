@@ -1,0 +1,20 @@
+# Copyright (C) 2023 Ashish Bhole.
+# Licensed under the GNU LGPL Version 2.1.
+
+deg = 1
+cell = interval
+element = FiniteElement("Lagrange", cell, degree=deg)
+
+v  = TestFunction(element)     # Test function
+u1 = TrialFunction(element)    # Value at t_n
+u0 = Coefficient(element)      # Value at t_n-1
+
+speed = Constant(cell)
+tau   = Constant(cell) 
+dt    = Constant(cell) # Time step
+
+# Implicit Euler's method
+res = v*u1*dx - v*u0*dx + dt*v*Dx(u1,0) * dx \
++ tau*(speed*Dx(u1,0) * speed*Dx(v,0) )* dx
+a = lhs(res)
+L = rhs(res)

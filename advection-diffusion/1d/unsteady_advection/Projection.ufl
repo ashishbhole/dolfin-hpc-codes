@@ -1,0 +1,11 @@
+#
+
+deg = 1
+element = FiniteElement("Lagrange", interval, deg)
+
+v = TestFunction(element)
+u = TrialFunction(element)
+f = Coefficient(element)
+
+a = v*u*dx
+L = v*f*dx
