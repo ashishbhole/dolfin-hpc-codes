@@ -1,0 +1,64 @@
+# Copyright (C) 2023 Ashish Bhole.
+# Licensed under the GNU LGPL Version 2.1.
+
+deg = 1
+cell = interval
+V = FiniteElement("Lagrange", cell, degree=deg)
+
+# Test and trial functions
+du = TrialFunction(V)
+v  = TestFunction(V)
+
+# Fields from previous time step (displacement, velocity, acceleration)
+u_old = Coefficient(V)
+v_old = Coefficient(V)
+a_old = Coefficient(V)
+f     = Coefficient(V)
+
+constant = FiniteElement("Discontinuous Lagrange", cell, 0)
+c  = Coefficient(constant)
+dt = Coefficient(constant)
+alpha_m = Coefficient(constant)
+alpha_f = Coefficient(constant)
+gamma   = 0.5+alpha_f-alpha_m
+beta    = (gamma+0.5)**2/4.0
+
+def avg(x_old, x_new, alpha):
+    return alpha*x_old + (1-alpha)*x_new
+
+def m(u, v):
+    return u*v*dx
+
+def k(u, v):
+    return c*c*Dx(u,0)*Dx(v,0)*dx
+
+def Wext(v):
+    return v*f*dx
+
+# Update formula for acceleration
+# a = 1/(2*beta)*((u - u0 - v0*dt)/(0.5*dt*dt) - (1-2*beta)*a0)
+def update_a(u, u_old, v_old, a_old, ufl=True):
+    if ufl:
+        dt_ = dt
+        beta_ = beta
+    else:
+        dt_ = float(dt)
+        beta_ = float(beta)
+    return (u-u_old-dt_*v_old)/beta_/dt_**2 - (1-2*beta_)/2/beta_*a_old
+
+# Update formula for velocity
+# v = dt * ((1-gamma)*a0 + gamma*a) + v0
+def update_v(a, u_old, v_old, a_old, ufl=True):
+    if ufl:
+        dt_ = dt
+        gamma_ = gamma
+    else:
+        dt_ = float(dt)
+        gamma_ = float(gamma)
+    return v_old + dt_*((1-gamma_)*a_old + gamma_*a)
+
+a_new = update_a(du, u_old, v_old, a_old, ufl=True)
+v_new = update_v(a_new, u_old, v_old, a_old, ufl=True)
+res = m(avg(a_old, a_new, alpha_m), v) + k(avg(u_old, du, alpha_f), v) - Wext(v)
+a = lhs(res)
+L = rhs(res)
