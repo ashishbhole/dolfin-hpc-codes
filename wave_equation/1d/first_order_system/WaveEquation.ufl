@@ -1,0 +1,28 @@
+# Copyright (C) 2023 Ashish Bhole.
+# Licensed under the GNU LGPL Version 2.1.
+
+import numpy as np
+
+deg = 1
+cell = interval
+# to specify number of components to a vector use dim.
+# keywords size or shape mentioned in legacy ufl documentation do not work
+E = VectorElement("Lagrange", cell, degree=deg, dim=2) 
+
+w_ = TestFunction(E)     # Test function
+w  = TrialFunction(E)    # Value at t_n
+w0 = Coefficient(E)     # Value at t_n-1
+
+f = as_vector([w[0], w[1]])
+
+constant = FiniteElement("Discontinuous Lagrange", cell, 0)
+dt       = Coefficient(constant) # Time step
+speed    = Coefficient(constant)
+
+speed_matrix = as_matrix([ [speed, 0.0], [0.0, -speed] ])
+
+# Implicit Euler's method
+res = inner(w_,w)*dx - inner(w_,w0)*dx + dt*inner(w_, speed_matrix * Dx(w,0))*dx \
+- dt*inner(w_,f)*dx
+a = lhs(res)
+L = rhs(res)
