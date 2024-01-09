@@ -1,0 +1,20 @@
+# Compile this.ufl with FFC: ffc -l dolfin Poisson.ufl.
+
+deg = 1
+cell = triangle
+CG  = FiniteElement("Lagrange", cell, degree=deg)
+u = TrialFunction(CG)
+v = TestFunction(CG)
+f = Coefficient(CG)
+g_L = Coefficient(CG)
+g_R = Coefficient(CG)
+
+DG  = FiniteElement("Discontinuous Lagrange", cell, 0)
+a0 = Coefficient(DG)
+a1 = Coefficient(DG)
+
+# use line breaks, errors due to long lines are not explicit
+res = a0*dot(grad(v), grad(u))*dx(0) + a1*dot(grad(v), grad(u))*dx(1) \
++ v*f*dx(0) + v*f*dx(1) + v*g_L*ds(0) + v*g_R*ds(1)
+a = lhs(res)
+L = rhs(res)
