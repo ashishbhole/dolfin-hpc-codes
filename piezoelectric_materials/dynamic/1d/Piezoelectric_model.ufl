@@ -1,0 +1,107 @@
+# Copyright (c) 2005 Johan Jansson (johanjan@math.chalmers.se)
+# Licensed under the GNU LGPL Version 2.1
+#
+# Compile <this>.ufl with FFC: ffc -l dolfin_hpc <this>.ufl.
+# https://www.sciencedirect.com/science/article/pii/S0045782522004959#sec5
+
+import numpy as np
+
+deg = 1
+cell = interval 
+
+# PZT-5h 
+rho = 7500.0
+
+# Define the material parameters
+# Elastic material
+elasticity_tensor = 11.7 * 1e10
+dielectric_tensor = 13 * 1e-9
+piezoelectric_tensor = 23.3
+
+E = FiniteElement("Lagrange", cell, degree=deg)
+WE = E * E
+
+w = Coefficient(WE)
+(v, q)   = TestFunctions(WE)
+(u, phi) = TrialFunctions(WE)
+force = Coefficient(E)
+traction = Coefficient(E)
+u_old = Coefficient(E)
+v_old = Coefficient(E)
+a_old = Coefficient(E)
+
+charge = Coefficient(E)
+gradphi = Coefficient(E)
+
+constant = FiniteElement("Discontinuous Lagrange", cell, degree=0)
+dt      = Coefficient(constant)
+alpha_m = Coefficient(constant)
+alpha_f = Coefficient(constant)
+gamma   = 0.5+alpha_f-alpha_m
+beta    = (gamma+0.5)**2/4.0
+
+# Define constitutive relations
+def sigma_u(u):
+    return elasticity_tensor * grad(u)
+
+# Electrostatic problem
+def edisp_p(phi):
+    return dielectric_tensor * grad(phi)
+
+# Piezoelectric coupling 
+def sigma_p(phi):
+    return piezoelectric_tensor * grad(phi)
+
+def edisp_u(u):
+    return piezoelectric_tensor * grad(u) 
+
+def avg(x_old, x_new, alpha):
+    return alpha*x_old + (1-alpha)*x_new
+
+# Mass form
+def m(v, u):
+    return rho * inner(v, u) * dx
+
+def k11(v, u):
+    return inner( grad(v), sigma_u(u) ) * dx
+
+def k12(v, phi):
+    return inner( grad(v), sigma_p(phi) ) * dx
+
+def k21(q, u):
+    return inner( grad(q), edisp_u(u)) * dx
+
+def k22(q, phi):
+    return inner( grad(q), edisp_p(phi) ) * dx
+
+#def f1(v, force, traction):
+#    return inner(v, force) * dx + inner(v, traction) * ds
+
+def f1(v, traction):
+    return inner(v, traction) * ds(2) 
+
+def f2(q, charge, gradphi):
+   return q * charge * dx - q * gradphi * ds
+
+# Update formulae for acceleration and velocity
+a_new = (u-u_old-dt*v_old)/beta/dt**2 - (1-2*beta)/2/beta*a_old
+v_new = v_old + dt*((1-gamma)*a_old + gamma*a_new)
+
+res = m(v, avg(a_old, a_new, alpha_m)) \
+    + k11(v, avg(u_old, u, alpha_f)) + k12(v, phi) \
+    - k21(q, avg(u_old, u, alpha_f)) + k22(q, phi) \
+    - f1(v, traction) # + f2(q, charge, gradphi) 
+a = lhs(res)
+L = rhs(res)
+
+#res1 = m(v, avg(a_old, a_new, alpha_m)) \
+#    + k11(v, avg(u_old, u, alpha_f))    \
+#    - k21(q, avg(u_old, u, alpha_f))    \
+#    - f1(v, force, traction) 
+#a1 = lhs(res1)
+#L1 = rhs(res1)
+#
+#res2 = k12(v, phi) + k22(q, phi) + f2(q, charge, gradphi)
+#a2 = lhs(res2)
+#L2 = rhs(res2)
+
