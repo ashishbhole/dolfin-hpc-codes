@@ -13,7 +13,7 @@ struct Fun : public Value< Fun, 1 >
   Fun(): t(0) {}
   void eval( real * values, const real * x ) const
   {
-    values[0] = exp(t) * sin(2.0 * DOLFIN_PI * x[0]) * cos(2.0 * DOLFIN_PI * x[1]) * cos(2.0 * DOLFIN_PI * x[2]) ; 
+    values[0] = exp(t) * cos(2.0 * DOLFIN_PI * x[0]) * cos(2.0 * DOLFIN_PI * x[1]) * cos(2.0 * DOLFIN_PI * x[2]) ; 
   }
   double t;
 };
@@ -33,7 +33,7 @@ int main()
   real tstep = 0.1;
 
   //real x[3] = {0.1,0.3,0.5};
-  real x[3] = {0.0, 0.0, -0.001035-0.00053};
+  real x[3] = {0.0, 0.0, 0.0}; // -0.001035-0.00053};
   real f_values[1] = {0.0};
   real g_values[1] = {0.0};
 
@@ -67,8 +67,15 @@ int main()
     // Evaluate discrete function g (projection of f)  
     g.eval(g_values, x);
 
-    // g.eval throws inf for no proc > 2 with bin mesh
-    message("time, f(x), g(x) = %g %g %g", t, f_values[0],  g_values[0]);
+    // Setting rank == 1 works for no of processes = 3.
+    // This means that 'message' works only for rank == 0 and one needs
+    // to find out rank to which the point belong.
+    if (dolfin::MPI::rank() == 1)
+    {
+      //message("time, f(x), g(x), rank = %g %g %g %i", t, f_values[0],  g_values[0], g.rank());
+      std::cout << " time, f(x), g(x) is : " << t << " " << f_values[0] << " " << g_values[0] << std::endl;
+    }
+
     t +=tstep;
     step += 1;
   }
