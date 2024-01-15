@@ -9,7 +9,8 @@
 #
 # Compile this.ufl with FFC: ffc -l dolfin_hpc Projection.ufl.
 
-element = FiniteElement("Lagrange", "tetrahedron", 1)
+cell = tetrahedron
+element = FiniteElement("Lagrange", cell, 1)
 
 v = TestFunction(element)
 u = TrialFunction(element)
