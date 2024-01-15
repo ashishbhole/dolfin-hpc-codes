@@ -38,6 +38,7 @@ int main()
   real g_values[1] = {0.0};
 
   Fun function;
+  real val;
 
   // Project to a discrete function
   Projection::BilinearForm a(mesh);
@@ -66,15 +67,11 @@ int main()
     f.eval(f_values, x);
     // Evaluate discrete function g (projection of f)  
     g.eval(g_values, x);
+    // MPI reduction is needed as the point could be in any rank.
+    // Reduction is supposed to pick the real number amongst 'inf's
+    MPI::reduce< MPI::min >( &g_values[0], &val, 1, 0, MPI::DOLFIN_COMM );
 
-    // Setting rank == 1 works for no of processes = 3.
-    // This means that 'message' works only for rank == 0 and one needs
-    // to find out rank to which the point belong.
-    if (dolfin::MPI::rank() == 1)
-    {
-      //message("time, f(x), g(x), rank = %g %g %g %i", t, f_values[0],  g_values[0], g.rank());
-      std::cout << " time, f(x), g(x) is : " << t << " " << f_values[0] << " " << g_values[0] << std::endl;
-    }
+    message("time, f(x), g(x) = %g %g %g", t, f_values[0], val);
 
     t +=tstep;
     step += 1;
