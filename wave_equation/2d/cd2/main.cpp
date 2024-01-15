@@ -12,7 +12,6 @@
 
 //#include "InitWaveEquation.h"
 #include "WaveEquation.h"
-#include "Projection.h"
 #include <sstream>
 #include <dolfin.h>
 #include <fstream>
@@ -27,13 +26,11 @@ real Nc = 0.01;
 // Analytic function to specify the initial condition and exact solution.
 struct InitialCondition : public Value< InitialCondition, 1 >
 {
-  // Constructor
   InitialCondition() : alpha(32.0) {}	
   void eval( real * values, const real * x ) const
   {
     values[0] = 0.0;
   }
-  // Current time
   double alpha;
 };
 
@@ -54,14 +51,6 @@ struct Source : public Value< Source, 1 >
   double t, alpha;
 };
 
-struct DirichletFunction : public Value<DirichletFunction, 1>
-{
-  void eval(real *value, const real *x) const
-  {
-    value[0] = 0.0;
-  }
-};
-
 struct DirichletBoundary : public SubDomain
 {
   bool inside(const real* x, bool on_boundary) const
@@ -70,18 +59,28 @@ struct DirichletBoundary : public SubDomain
   }
 };
 
-void project(Function &ff, Mesh &mesh, Source &src, double t,
-             Matrix &Ap, Vector &bp, 
-	     KrylovSolver &solver, bool flag)
+real compute_inradius(Mesh & m)
 {
-  src.t=t;
-  Analytic<Source> f( mesh, src);
-  Projection::LinearForm Lp(mesh, f);
-  Lp.assemble(bp, flag);
-  solver.solve(Ap, ff.vector(), bp);
-  ff.sync();
-}
+  real h_max = 0.0;
+  real h_min = 1.0e12;
 
+  for ( CellIterator c( m ); !c.end(); ++c )
+  {
+    real h  = c->inradius();
+    h_max = std::max( h_max, h );
+    h_min = std::min( h_min, h );
+  }
+
+  real h_min_val = h_min;
+  real h_max_val = h_max;
+  if ( m.is_distributed() )
+  {
+    MPI::reduce< MPI::min >( &h_min, &h_min_val, 1, 0, MPI::DOLFIN_COMM );
+    MPI::reduce< MPI::max >( &h_max, &h_max_val, 1, 0, MPI::DOLFIN_COMM );
+  }
+
+  return h_max_val;
+}
 File file("solution.pvd");
 std::ofstream outfile ("signals.txt");
 
@@ -94,21 +93,25 @@ int main(int argc, char **argv)
   real u_values1[1] = {0.0};
   real u_values2[1] = {0.0};
 
+  real val1, val2;
+
   // Parallel file writing does not work with in-built meshes.
   Mesh mesh("disc_in_disc.bin");
+  real t = 0.0;
 
-  Analytic<DirichletFunction> u0(mesh);
+  waveequation_finite_element_0 FE;
+  uint m = FE.degree();
+  real h = pow(compute_inradius(mesh), m);
+  
+  Constant u0(0.0);
   DirichletBoundary boundary;
   DirichletBC bc(u0, mesh, boundary);
 
-  double t = 0.0;
+  Source src;
   InitialCondition Gaussian;
   Gaussian.alpha = 128.0;
   Analytic<InitialCondition> ui( mesh, Gaussian);
 
-  Source src;
-
-  double h = MeshQuality(mesh).h_max;
   tstep = Nc * h / speed;
   Constant dt(tstep);
   Constant c(speed);
@@ -116,24 +119,18 @@ int main(int argc, char **argv)
   Function u(a.trial_space());
   Function un(a.trial_space());
   Function u_old(a.trial_space());
-  Function ff(a.trial_space());
-  WaveEquation::LinearForm L(mesh, un, u_old, ff, dt);
   Matrix A;
   Vector b;
   a.assemble(A, true);
   KrylovSolver solver(bicgstab, bjacobi);
 
-  Projection::BilinearForm ap(mesh);
-  Matrix Ap;
-  Vector bp;
-  ap.assemble(Ap, true);
-
   uint step = 0;
   while (t < Tfinal)
   {
-    if (t+tstep > Tfinal) dt = Tfinal - t;
-    project(ff, mesh, src, t, Ap, bp, solver, step==0);
-
+    src.t = t;
+    Analytic<Source> ff( mesh, src);
+    
+    WaveEquation::LinearForm L(mesh, un, u_old, ff, dt);
     L.assemble(b, step==0);
     bc.apply(A, b, a);
     solver.solve(A, u.vector(), b);
@@ -141,13 +138,16 @@ int main(int argc, char **argv)
     u_old = un;
     un = u;
     #ifdef IO
-    if (step%100 == 0) file << u; 
+      if (step%100 == 0) file << u; 
     #endif
 
     u.eval(u_values1, rec1);
     u.eval(u_values2, rec2);
-    message("t, u1, u2 = %g %g %g", t, u_values1[0], u_values2[0]);
-    outfile << t << " " << u_values1[0] << " " << u_values2[0] << "\n";
+
+    MPI::reduce< MPI::min >( &u_values1[0], &val1, 1, 0, MPI::DOLFIN_COMM );
+    MPI::reduce< MPI::min >( &u_values2[0], &val2, 1, 0, MPI::DOLFIN_COMM );
+    
+    outfile << t << " " << val1 << " " << val2 << "\n";
 
     t +=tstep;
     step += 1;

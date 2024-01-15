@@ -1,7 +1,7 @@
 # Copyright (C) 2023 Ashish Bhole.
 # Licensed under the GNU LGPL Version 2.1.
 
-deg = 2
+deg = 3
 element = FiniteElement("Lagrange", triangle, degree=deg)
 
 v  = TestFunction(element)     # Test function
