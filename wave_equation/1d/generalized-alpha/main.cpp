@@ -7,7 +7,6 @@
 #define IO
 
 #include "WaveEquation.h"
-#include "Projection.h"
 
 #include <sstream>
 #include <dolfin.h>
@@ -18,15 +17,11 @@ real Np = 100;
 
 real tstep = 0.001;
 real speed = 0.1;
-real Tfinal = 5.0;
+real Tfinal = 4.0;
 
 real alpha_m_value = 0.0;
 real alpha_f_value = 0.0;
 
-real rec1[3] = {3.0, 3.0, 3.0};
-real u_values[1] = {0.0};
-
-// Analytic function to specify the initial condition and exact solution.
 struct ExactSolution : public Value< ExactSolution, 1 >
 {
   ExactSolution() : t(0), alpha(32.0), speed(1.0) {}
@@ -47,14 +42,6 @@ struct Source : public Value< Source, 1 >
     values[0] = 0.0;
   }
   double t, alpha;
-};
-
-struct DirichletFunction : public Value<DirichletFunction, 1>
-{
-  void eval(real *value, const real *x) const
-  {
-    value[0] = 0.0;
-  }
 };
 
 struct DirichletBoundary : public SubDomain
@@ -98,10 +85,9 @@ int main(int argc, char **argv)
 { 
   dolfin_init(argc, argv);
 
-  // Parallel file writing does not work with in-built meshes.
   UnitInterval mesh(Np);
 
-  Analytic<DirichletFunction> u0(mesh);
+  Constant u0(0.0);
   DirichletBoundary boundary;
   DirichletBC bc(u0, mesh, boundary);
 
@@ -110,17 +96,6 @@ int main(int argc, char **argv)
   Gaussian.alpha = 128.0;
   Analytic<ExactSolution> ui( mesh, Gaussian);
 
-  Projection::BilinearForm a1(mesh);
-  Projection::LinearForm L1(mesh, ui);
-  Matrix A1;
-  Vector b1;
-  a1.assemble(A1, true);
-  L1.assemble(b1, true);
-  Function u_old(a1.trial_space());
-  KrylovSolver solver(bicgstab, bjacobi);
-  solver.solve(A1, u_old.vector(), b1);
-  u_old.sync();
-  
   Source src;
 
   real Nc = 0.05;
@@ -130,15 +105,20 @@ int main(int argc, char **argv)
   Constant c(speed);
   Constant alpha_m(alpha_m_value);
   Constant alpha_f(alpha_f_value);
+
   WaveEquation::BilinearForm a(mesh, c, dt, alpha_m, alpha_f);
   Function u(a.trial_space());
+  Function u_old(a.trial_space());
   Function v_old(a.trial_space());
   Function a_old(a.trial_space());
   Function ff(a.trial_space());
+  FunctionInterpolation::compute(ui, u_old);
+  u_old.sync();
   WaveEquation::LinearForm L(mesh, u_old, v_old, a_old, ff, c, dt, alpha_m, alpha_f);
   Matrix A;
   Vector b;
   a.assemble(A, true);
+  KrylovSolver solver(bicgstab, bjacobi);
 
   Function u_vec(a.trial_space());
   Function v_vec(a.trial_space());
@@ -152,10 +132,9 @@ int main(int argc, char **argv)
   uint step = 0;
   while (t < Tfinal)
   {
-    if (t+tstep > Tfinal) dt = Tfinal - t;
     src.t=t;
     Analytic<Source> f( mesh, src);
-    ff << f;
+    FunctionInterpolation::compute(src, ff);
     L.assemble(b, step==0);
     bc.apply(A, b, a);
     solver.solve(A, u.vector(), b);
@@ -177,7 +156,7 @@ int main(int argc, char **argv)
     u_old = u;
     
     #ifdef IO
-    if (step%100 == 0) file << u; 
+      if (step%100 == 0) file << u; 
     #endif
     t +=tstep;
     step += 1;
