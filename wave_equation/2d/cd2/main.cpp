@@ -119,6 +119,7 @@ int main(int argc, char **argv)
   Function u(a.trial_space());
   Function un(a.trial_space());
   Function u_old(a.trial_space());
+  FunctionInterpolation::compute(ui, u_old);
   Matrix A;
   Vector b;
   a.assemble(A, true);
@@ -129,7 +130,6 @@ int main(int argc, char **argv)
   {
     src.t = t;
     Analytic<Source> ff( mesh, src);
-    
     WaveEquation::LinearForm L(mesh, un, u_old, ff, dt);
     L.assemble(b, step==0);
     bc.apply(A, b, a);
