@@ -1,8 +1,4 @@
-// Copyright (C) 2010 Jeannette Spuehler.
-// Licensed under the GNU LGPL Version 2.1.
-//
-// Modified by Ashish Bhole 2023: 
-// Modified from ConvectionDiffusion demo
+// Written by Ashish Bhole (2023) 
 //
 // This is a linear wave equation equation.
 //
@@ -10,7 +6,6 @@
 
 #define IO
 
-//#include "InitWaveEquation.h"
 #include "WaveEquation.h"
 #include <sstream>
 #include <dolfin.h>
@@ -144,9 +139,14 @@ int main(int argc, char **argv)
     u.eval(u_values1, rec1);
     u.eval(u_values2, rec2);
 
-    MPI::reduce< MPI::min >( &u_values1[0], &val1, 1, 0, MPI::DOLFIN_COMM );
-    MPI::reduce< MPI::min >( &u_values2[0], &val2, 1, 0, MPI::DOLFIN_COMM );
-    
+    val1 = u_values1[0];
+    val2 = u_values2[0];
+
+    if(mesh.is_distributed())
+    {
+      MPI::reduce< MPI::min >( &u_values1[0], &val1, 1, 0, MPI::DOLFIN_COMM );
+      MPI::reduce< MPI::min >( &u_values2[0], &val2, 1, 0, MPI::DOLFIN_COMM );
+    }
     outfile << t << " " << val1 << " " << val2 << "\n";
 
     t +=tstep;
