@@ -14,7 +14,7 @@ tau   = Constant(cell)
 dt    = Constant(cell) # Time step
 
 # Implicit Euler's method
-res = v*u1*dx - v*u0*dx + dt*v*Dx(u1,0) * dx \
+res = v*u1*dx - v*u0*dx + dt*v*speed*Dx(u1,0) * dx \
 + tau*(speed*Dx(u1,0) * speed*Dx(v,0) )* dx
 a = lhs(res)
 L = rhs(res)

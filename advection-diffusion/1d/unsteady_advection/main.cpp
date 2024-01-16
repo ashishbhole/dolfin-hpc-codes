@@ -1,6 +1,3 @@
-// Copyright (C) 2010 Jeannette Spuehler.
-// Licensed under the GNU LGPL Version 2.1.
-//
 // Written by Ashish Bhole 2023: 
 //
 // This is an IVP tp solve linear advection equation.
@@ -14,7 +11,6 @@
 #define IO
 
 #include "AdvectionDiffusion.h"
-#include "Projection.h"
 
 #include <sstream>
 #include <dolfin.h>
@@ -76,20 +72,6 @@ int main(int argc, char **argv)
   Gaussian.t = t;
   Analytic<ExactSolution> ui( mesh, Gaussian);
 
-  // Note that interpolation operation u0<<ui only works for degree=1.
-  // Hence projection of the analytic function on FE space is used as
-  // the initial condition.
-  Projection::BilinearForm a1(mesh);
-  Projection::LinearForm L1(mesh, ui);
-  Matrix A1;
-  Vector b1;
-  a1.assemble(A1, true);
-  L1.assemble(b1, true);
-  Function u0(a1.trial_space());
-  KrylovSolver solver(bicgstab, bjacobi);
-  solver.solve(A1, u0.vector(), b1);
-  u0.sync();
-
   real Nc = 0.05;
   //real h = MeshQuality(mesh).h_max; // does not seem to work for 1d meshes
   real h = 1.0 / Np;
@@ -102,10 +84,13 @@ int main(int argc, char **argv)
 
   AdvectionDiffusion::BilinearForm a(mesh, speed, tau, dt);
   Function u1(a.trial_space());
+  Function u0(a.trial_space());
+  FunctionInterpolation::compute(ui, u0);
   AdvectionDiffusion::LinearForm L(mesh, u0);
   Matrix A;
   Vector b;
   a.assemble(A, true);
+  KrylovSolver solver(bicgstab, bjacobi);
 
   uint step = 0;
 
@@ -115,8 +100,6 @@ int main(int argc, char **argv)
 
   while (t < Tfinal)
   {
-    // Adjust dt to reach final time exactly
-    if (t+tstep > Tfinal) dt = Tfinal - t;
     L.assemble(b, step==0);
     bc.apply(A, b, a);
     solver.solve(A, u1.vector(), b);
@@ -129,19 +112,16 @@ int main(int argc, char **argv)
     #endif
   }
   // Get the exact solution at Tfinal
-  Gaussian.t = Tfinal;
+  Gaussian.t = t;
   Analytic<ExactSolution> uex( mesh, Gaussian);
-  Projection::LinearForm L2(mesh, uex);
-  Vector b2;
-  L2.assemble(b2, true);
-  solver.solve(A1, u0.vector(), b2);
+  FunctionInterpolation::compute(uex, u0);
   u0.sync();
 
   file << u0;
 
   // Compute the numerical error in u1 as : u1 = u1 - ue
   u1 -= u0;
-  message( "h, Error l1, l2, linf norm: %e %e %e %e", h, u1.vector().norm(l1), u1.vector().norm(l2), u1.vector().norm(linf) );
+  message( "time, h, Error l1, l2, linf norm: %e %e %e %e %e", t, h, u1.vector().norm(l1), u1.vector().norm(l2), u1.vector().norm(linf) );
 
   dolfin_finalize();
   return 0;

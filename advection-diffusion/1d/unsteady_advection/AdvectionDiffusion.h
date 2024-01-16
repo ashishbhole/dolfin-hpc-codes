@@ -2273,19 +2273,20 @@ return enabled;
     alignas(32) static const double FE0_C0_D1_Q2[1][1][2] = { { { -1.0, 1.0 } } };
     // Unstructured piecewise computations
     const double J_c0 = coordinate_dofs[0] * FE0_C0_D1_Q2[0][0][0] + coordinate_dofs[1] * FE0_C0_D1_Q2[0][0][1];
-    alignas(32) double sp[8];
-    sp[0] = 1.0 / J_c0 * w[2][0];
-    sp[1] = 1.0 / J_c0 * w[0][0];
-    sp[2] = sp[1] * w[0][0];
-    sp[3] = sp[2] * (1.0 / J_c0);
-    sp[4] = sp[3] * w[1][0];
-    sp[5] = std::abs(J_c0);
-    sp[6] = sp[0] * sp[5];
-    sp[7] = sp[4] * sp[5];
-    A[0] = 0.3333333333333334 * sp[5] + -0.5 * sp[6] + sp[7];
-    A[1] = 0.1666666666666667 * sp[5] + 0.5 * sp[6] - sp[7];
-    A[2] = 0.1666666666666667 * sp[5] + -0.5 * sp[6] - sp[7];
-    A[3] = 0.3333333333333334 * sp[5] + 0.5 * sp[6] + sp[7];
+    alignas(32) double sp[9];
+    sp[0] = w[0][0] * w[2][0];
+    sp[1] = sp[0] * (1.0 / J_c0);
+    sp[2] = 1.0 / J_c0 * w[0][0];
+    sp[3] = sp[2] * w[0][0];
+    sp[4] = sp[3] * (1.0 / J_c0);
+    sp[5] = sp[4] * w[1][0];
+    sp[6] = std::abs(J_c0);
+    sp[7] = sp[1] * sp[6];
+    sp[8] = sp[5] * sp[6];
+    A[0] = 0.3333333333333334 * sp[6] + -0.5 * sp[7] + sp[8];
+    A[1] = 0.1666666666666667 * sp[6] + 0.5 * sp[7] - sp[8];
+    A[2] = 0.1666666666666667 * sp[6] + -0.5 * sp[7] - sp[8];
+    A[3] = 0.3333333333333334 * sp[6] + 0.5 * sp[7] + sp[8];
   }
 
 };
@@ -2386,7 +2387,7 @@ public:
 
   const char * signature() const final override
   {
-    return "6a88ccd1884c8c80208c8bac7d3dad51e83a80371fdcaf428456c28a1f81c3526110f26637f681b06377c619d4d4e9c10e21ab35cf0b8b699c21b6e35306170c";
+    return "6e40a04027d3e366ceff76bb05f73c2b26af6e5bbbed5c4cdbb2b5a218e8efe956f6dfb0e4fb36d7869fce751161abe7269491902c518c053fe886c0a549be3b";
   }
 
   std::size_t rank() const final override
