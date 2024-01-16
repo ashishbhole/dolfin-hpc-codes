@@ -35,14 +35,16 @@ int main()
   //real x[3] = {0.1,0.3,0.5};
   real x[3] = {0.0, 0.0, 0.0}; // -0.001035-0.00053};
   real f_values[1] = {0.0};
-  real g_values[1] = {0.0};
+  real u_values[1] = {0.0};
+  real uint_values[1] = {0.0};
 
   Fun function;
-  real val;
+  real val, val_int;
 
   // Project to a discrete function
   Projection::BilinearForm a(mesh);
-  Function g(a.trial_space());
+  Function u(a.trial_space());
+  Function u_int(a.trial_space());
 
   // solve PDE
   Matrix A;
@@ -51,7 +53,7 @@ int main()
 
   KrylovSolver solver(bicgstab, bjacobi);
 
-  File( "function.pvd" ) << g;
+  File( "function.pvd" ) << u;
 
   uint step = 0;
   while (t < Tfinal)
@@ -60,18 +62,27 @@ int main()
     Analytic<Fun> f(mesh, function);
     Projection::LinearForm L(mesh, f);
     L.assemble(b, step == 0);
-    solver.solve(A, g.vector(), b);
-    g.sync();
+    solver.solve(A, u.vector(), b);
+    u.sync();
 
-    // Evaluate user-defined function f
+    FunctionInterpolation::compute(f, u_int);
+    
     f.eval(f_values, x);
-    // Evaluate discrete function g (projection of f)  
-    g.eval(g_values, x);
+    u.eval(u_values, x);
+    u_int.eval(uint_values, x);
+
+    val = u_values[0];
+    val_int = uint_values[0];
+
     // MPI reduction is needed as the point could be in any rank.
     // Reduction is supposed to pick the real number amongst 'inf's
-    MPI::reduce< MPI::min >( &g_values[0], &val, 1, 0, MPI::DOLFIN_COMM );
+    if(mesh.is_distributed())
+    {
+      MPI::reduce< MPI::min >( &u_values[0], &val, 1, 0, MPI::DOLFIN_COMM );
+      MPI::reduce< MPI::min >( &uint_values[0], &val_int, 1, 0, MPI::DOLFIN_COMM );
+    }
 
-    message("time, f(x), g(x) = %g %g %g", t, f_values[0], val);
+    message("time, f(x), fint(x), g(x) = %e %e %e %e", t, f_values[0], val_int, val);
 
     t +=tstep;
     step += 1;
