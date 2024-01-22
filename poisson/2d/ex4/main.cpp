@@ -49,7 +49,6 @@ struct BottomValue : public Value< BottomValue >
   }
 };
 
-
 class Left : public SubDomain
 {
   bool inside(const real* x, bool on_boundary) const
@@ -84,9 +83,9 @@ class Top : public SubDomain
 
 class Obstacle : public SubDomain
 {
-  bool inside(const real* x) const //, bool on_boundary) const
+  bool inside(const real* x, bool on_boundary) const
   {
-    return (x[0] >= 0.5 && x[0] <= 0.7) && (x[1] >= 0.2 && x[1] <= 1.0);
+    return (x[0] >= 0.2 && x[0] <= 1.0) && (x[1] >= 0.5 && x[1] <= 0.7);
   }
 };
 
@@ -119,7 +118,7 @@ int main(int argc, char **argv)
   Analytic<TopValue>      topval( mesh );
   Analytic<BottomValue>   bottomval( mesh );
   Analytic<LeftFlux>      g_L( mesh );
-  Constant g_R(1.0);
+  Analytic<RightFlux>     g_R( mesh );
 
   Constant a0(1.0);
   Constant a1(0.01);
@@ -133,8 +132,12 @@ int main(int argc, char **argv)
 
   Matrix A;
   Vector b;
-  a.assemble( A, true );
-  L.assemble( b, true );
+
+  //a.assemble( A, true );
+  //L.assemble( b, true );
+  Assembler::assemble(A, a, sub_domains, boundaries, boundaries, true);
+  Assembler::assemble(b, L, sub_domains, boundaries, boundaries, true);
+
   bc_top.apply( A, b, a );
   bc_bottom.apply( A, b, a );
 
