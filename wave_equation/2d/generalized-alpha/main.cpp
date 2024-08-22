@@ -15,12 +15,13 @@ using namespace dolfin;
 
 real tstep = 0.01;
 real speed = 1.0;
-real Tfinal = 5.0;
+real Tfinal = 10.0;
+real t = 0.0;
 
 real alpha_m_value = 0.0;
 real alpha_f_value = 0.0;
 
-real rec[3] = {3.0, 3.0, 0.0};
+real rec[3] = {0.0, -2.2, 0.0};
 real u_values[1] = {0.0};
 
 // Analytic function to specify the initial condition and exact solution.
@@ -96,7 +97,7 @@ void update_v(Function& v, const Function& a, const Function& a0,
   v.vector() += v0.vector();
 }
 
-File file("solution.pvd");
+File file("solution.pvd", t);
 std::ofstream outfile ("signals.txt");
 
 int main(int argc, char **argv)
@@ -106,13 +107,12 @@ int main(int argc, char **argv)
   real val;
 
   // Parallel file writing does not work with in-built meshes.
-  Mesh mesh("rectangular_struct_tria.bin");
+  Mesh mesh("crack_with_plugin.bin");
 
   Analytic<DirichletFunction> u0(mesh);
   DirichletBoundary boundary;
   DirichletBC bc(u0, mesh, boundary);
 
-  double t = 0.0;
   InitialCondition Gaussian;
   Gaussian.alpha = 128.0;
   Analytic<InitialCondition> ui( mesh, Gaussian);
