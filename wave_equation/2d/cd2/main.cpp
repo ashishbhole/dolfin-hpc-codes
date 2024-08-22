@@ -76,13 +76,14 @@ real compute_inradius(Mesh & m)
 
   return h_max_val;
 }
-File file("solution.pvd");
+
 std::ofstream outfile ("signals.txt");
 
 int main(int argc, char **argv)
 { 
   dolfin_init(argc, argv);
 
+  real t = 0.0;
   real rec1[3] = { 4.0, 0.5, 0.0};
   real rec2[3] = {-4.0, 0.5, 0.0};
   real u_values1[1] = {0.0};
@@ -92,7 +93,7 @@ int main(int argc, char **argv)
 
   // Parallel file writing does not work with in-built meshes.
   Mesh mesh("disc_in_disc.bin");
-  real t = 0.0;
+  File( "my_mesh.bin" ) << mesh;
 
   waveequation_finite_element_0 FE;
   uint m = FE.degree();
@@ -121,6 +122,8 @@ int main(int argc, char **argv)
   KrylovSolver solver(bicgstab, bjacobi);
 
   uint step = 0;
+  File file("solution.bin", t);
+  
   while (t < Tfinal)
   {
     src.t = t;
