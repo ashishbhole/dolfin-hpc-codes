@@ -13,7 +13,7 @@ w_ = TestFunction(E)     # Test function
 w  = TrialFunction(E)    # Value at t_n
 w0 = Coefficient(E)     # Value at t_n-1
 
-f = as_vector([w[0], w[1]])
+f = as_vector([w[1], 0.0])
 
 constant = FiniteElement("Discontinuous Lagrange", cell, 0)
 dt       = Coefficient(constant) # Time step
