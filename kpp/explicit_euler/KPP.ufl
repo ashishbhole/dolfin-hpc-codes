@@ -1,0 +1,29 @@
+# Copyright (C) 2023 Ashish Bhole.
+# Licensed under the GNU LGPL Version 2.1.
+
+deg = 1
+cell = triangle
+element = FiniteElement("Lagrange", cell, degree=deg)
+x = SpatialCoordinate(cell)
+
+v = TestFunction(element)     # Test function
+u = TrialFunction(element)
+u0 = Coefficient(element)      # Value at t_n-1
+
+constant = FiniteElement("Discontinuous Lagrange", cell, 0)
+dt = Coefficient(constant) # Time step
+tau= Coefficient(constant) # VMS Stabilization
+tau_sc_perp = Coefficient(constant) 
+tau_sc_par  = Coefficient(constant) 
+
+Lu  = (cos(u0)*Dx(u0, 0) - sin(u0)*Dx(u0, 1))
+LTv = (cos(u0)*Dx(v , 0) - sin(u0)*Dx(v , 1))
+norm_ug = sqrt(Dx(u0, 0)*Dx(u0, 0) + Dx(u0, 1)*Dx(u0, 1))
+fp  = norm_ug / u0
+dc  = abs(Lu) / u0 * fp
+uhat= as_vector([Dx(u0, 0), Dx(u0, 1)]) / (norm_ug + 1e-8)
+
+res = v*u*dx - v*u0*dx + v*dt*Lu*dx + inner(LTv, tau*Lu)*dx + tau_sc_perp*dc*inner(grad(v), grad(u0))*dx \
+    + (tau_sc_par-tau_sc_perp)*dc*inner(inner(uhat, grad(v)), inner(uhat, grad(u0)))*dx
+a = lhs(res)
+L = rhs(res)
