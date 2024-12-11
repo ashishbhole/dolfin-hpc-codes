@@ -21,9 +21,9 @@ struct AnalyticFunction : public Value< AnalyticFunction, 1 >
   AnalyticFunction() : t(0.0) {}	
   void eval( real * values, const real * x ) const
   {
-    if(x[0] < 0.5-3.0*t/5.0)
+    if(x[0] <= 0.5-3.0*t/5.0)
     {
-      if(x[1] > 0.5+3.0*t/20.0)
+      if(x[1] >= 0.5+3.0*t/20.0)
       {
         values[0] = -0.2;
       }
@@ -32,9 +32,9 @@ struct AnalyticFunction : public Value< AnalyticFunction, 1 >
         values[0] = 0.5;
       }
     }
-    else if(0.5-3.0*t/5.0 < x[0] < 0.5 - 0.25*t)
+    else if(0.5-3.0*t/5.0 < x[0] && 0.5 - 0.25*t >= x[0])
     {
-      if(x[1] > -8.0*x[0]/7.0 + 15.0/14.0 - 15.0*t/28.0)
+      if(x[1] >= -8.0*x[0]/7.0 + 15.0/14.0 - 15.0*t/28.0)
       {
         values[0] = -1.0;
       }
@@ -43,9 +43,20 @@ struct AnalyticFunction : public Value< AnalyticFunction, 1 >
         values[0] = 0.5;
       }
     }
-    else if(0.5 - 0.25*t < x[0] < 0.5 + 4.0*t/5.0)
+    else if(0.5 - 0.25*t < x[0] && 0.5 + 0.5*t >= x[0])
     {
-      if(x[1] > x[0] - 5.0*(x[0] + t - 0.5)*(x[0] + t - 0.5)/(18.0*t))
+      if(x[1] >= x[0]/6.0 + 5.0/12.0 - 5.0*t/24.0)
+      {
+        values[0] = -1.0;
+      }
+      else
+      {
+        values[0] = 0.5;
+      }
+    }
+    else if(0.5 + 0.5*t < x[0] && 0.5 + 4.0*t/5.0 >= x[0])
+    {
+      if(x[1] >= x[0] - 5.0*(x[0] + t - 0.5)*(x[0] + t - 0.5)/(18.0*t))
       {
         values[0] = -1.0;
       }
@@ -56,7 +67,7 @@ struct AnalyticFunction : public Value< AnalyticFunction, 1 >
     }
     else if(x[0] > 0.5 + 4.0*t/5.0)
     {
-      if(x[1] > 0.5-0.1*t)
+      if(x[1] >= 0.5-0.1*t)
       {
         values[0] = -1.0;
       }
@@ -74,15 +85,15 @@ struct InitialCondition : public Value< InitialCondition, 1 >
 {
   void eval( real * values, const real * x ) const
   {
-    if(x[0] < 0.5 && x[1] < 0.5)
+    if(x[0] <= 0.5 && x[1] < 0.5)
     {
       values[0] = 0.5;
     }
-    else if(x[0] < 0.5 && x[1] > 0.5) 
+    else if(x[0] <= 0.5 && x[1] >= 0.5) 
     {
       values[0] = -0.2;
     }
-    else if(x[0] > 0.5 && x[1] > 0.5)
+    else if(x[0] > 0.5 && x[1] >= 0.5)
     {
       values[0] = -1.0;
     }
@@ -142,12 +153,14 @@ int main(int argc, char **argv)
 
   // some quantities in form files
   Constant dt(tstep);
-  Constant tau(-1e-6);
+  Constant tau(1e-1*tstep);
+  Constant tau_sc_perp(1e-6*h*h*h);
+  Constant tau_sc_par(1e-8*h*h*h);
 
   // See the declaration in the header file
   Burger::BilinearForm a(mesh);
   Function u(a.trial_space());
-  Burger::LinearForm L(mesh, u0, dt, tau);
+  Burger::LinearForm L(mesh, u0, dt, tau, tau_sc_perp, tau_sc_par);
   Matrix A;
   Vector b;
   a.assemble(A, true);
@@ -174,11 +187,12 @@ int main(int argc, char **argv)
     u0 = u;
     t +=tstep;
     step += 1;
+    message( "t, l2 norm: %e %e", t, u0.vector().norm(l2) );
+    
     #ifdef IO
     if (step%100 == 0) file << u0; 
     #endif
   }
-  message( "h, Error l1, l2, linf norm: %e %e %e %e", h, u0.vector().norm(l1), u0.vector().norm(l2), u0.vector().norm(linf) );
 
   dolfin_finalize();
   return 0;
