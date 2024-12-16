@@ -1,0 +1,15 @@
+# The bilinear.ufl for classical linear elasticity (Navier).
+# Compile this.ufl with FFC: ffc -l dolfin Elasticity.ufl.
+
+dim=2
+deg=1
+cell= "triangle"
+element = VectorElement("Lagrange", cell, degree=deg)
+v = TestFunction(element)
+u = TrialFunction(element)
+one = Coefficient(element)
+
+constant = FiniteElement("Discontinuous Lagrange", cell, degree=0)
+rho   = Coefficient(constant) 
+
+a = action(rho*inner(u, v)*dx, one)

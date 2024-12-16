@@ -1,0 +1,15 @@
+# Copyright (C) 2005-2006 Anders Logg (logg@simula.no)
+# Licensed under the GNU LGPL Version 2.1
+#
+# This example demonstrates how to define a functional, here
+# the energy norm (squared) for a reaction-diffusion problem.
+#
+# Compile this.ufl with FFC: ffc -l dolfin EnergyNorm.ufl
+
+deg=1
+cell= "triangle"
+element = VectorElement("Lagrange", cell, degree=deg)
+
+v = Coefficient(element)
+
+M = dot(v, v)*dx # (v*v + inner(grad(v), grad(v)))*dx
