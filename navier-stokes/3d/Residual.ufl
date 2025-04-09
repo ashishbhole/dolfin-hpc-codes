@@ -1,0 +1,48 @@
+# Copyright (c) 2005 Johan Jansson (johanjan@math.chalmers.se)
+# Licensed under the GNU GPL Version 2
+#
+# First added:  2005
+# Last changed: 2006-03-28
+#
+# The bilinear form for the incompressible Navier-Stokes equations
+# Compile this form with FFC: ffc -l dolfin_hpc NavierStokes3D.ufl.
+
+cell = "tetrahedron"
+
+K1 = VectorElement("Lagrange", cell, 1)
+# Dimension of domain
+d = K1.cell().geometric_dimension()
+K2 = FiniteElement("Lagrange", cell, 1)
+K3 = FiniteElement("Discontinuous Lagrange", cell, 0)
+K4 = VectorElement("Discontinuous Lagrange", cell, 0)
+
+K = K1
+
+v = TestFunction(K) # Test function. What space should this be?
+#U = TrialFunction(K) # Vertex velocity
+#res = TrialFunction(K3) # Residual
+U = Coefficient(K) # Velocity computed in the current iteration, on cell level
+U0 = Coefficient(K) # Velocity in previous time step, on cell level
+
+P = Coefficient(K2) # Pressure on cell level
+k = Coefficient(K3) # Time step size
+#h = Coefficient(K3) # Cell diameter
+h = CellDiameter(v.ufl_domain())
+
+def ugradu(u, V):
+    return as_vector([dot(u, grad(V[i])) for i in range(d)])
+
+def vector_norm(u):
+    return sqrt(inner(u, u))
+
+
+
+
+#a = (inner(res, v)) * dx
+L = (h * (-inner(U, v) + inner(U0, v) - k*(inner(ugradu(U, U), v) + inner(P*Identity(d), grad(v)) ))) * dx
+# + inner(P*Identity(d), grad(v))))) * dx
+
+#L = k * vector_norm(ugradu(Um, Um)) * v * dx(domain = v.ufl_domain())
+#L = k * inner(P, v) * dx
+#L = inner(vector_norm(U0m), v) * dx
+
