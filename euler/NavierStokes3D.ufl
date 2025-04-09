@@ -1,0 +1,59 @@
+# Copyright (c) 2005 Johan Jansson (johanjan@math.chalmers.se)
+# Licensed under the GNU GPL Version 2
+#
+# First added:  2005
+# Last changed: 2006-03-28
+#
+# The bilinear form for the incompressible Navier-Stokes equations
+# Compile this form with FFC: ffc -l dolfin_hpc NavierStokes3D.ufl.
+
+cell = "tetrahedron"
+
+K1 = VectorElement("Lagrange", cell, 1)
+# Dimension of domain
+d = K1.cell().geometric_dimension()
+K2 = FiniteElement("Lagrange", cell, 1)
+K3 = FiniteElement("Discontinuous Lagrange", cell, 0)
+K4 = VectorElement("Discontinuous Lagrange", cell, 0)
+
+K = K1
+
+v = TestFunction(K)
+U = TrialFunction(K) # Vertex velocity
+UP = Coefficient(K)
+U0 = Coefficient(K)
+
+P = Coefficient(K2)
+nu = Coefficient(K3)
+d1 = Coefficient(K3)
+d2 = Coefficient(K3)
+k = Coefficient(K3)
+
+def ugradu(u, v):
+    return as_vector([dot(u, grad(v[i])) for i in range(d)])
+
+S = P*Identity(d) - nu*grad(UP)
+
+def f(u, v):
+    return -inner(ugradu(UP, u), v) + \
+    inner(S, grad(v)) + \
+    -inner(d2*div(u), div(v)) + \
+    -d1*inner(ugradu(UP, u), ugradu(UP, v))
+    
+def dfdu(u, v):
+    return -inner(ugradu(UP, u), v) + \
+    -nu*inner(grad(u), grad(v)) + \
+    -d2*dot(div(u), div(v)) + \
+    -d1*dot(ugradu(UP, u), ugradu(UP, v))
+
+# cG(1)
+def F(u, u0, k, v):
+    uc = 0.5*(u + u0)
+    return (-inner(u, v) + inner(u0, v) + k*f(uc, v))
+
+def dFdu(u, k, v):
+    uc = 0.5*u
+    return (-inner(u, v) + k*dfdu(uc, v))
+
+a = (dFdu(U, k, v)) * dx
+L = (dFdu(UP, k, v) - F(UP, U0, k, v)) * dx

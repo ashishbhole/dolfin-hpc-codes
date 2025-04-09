@@ -1,0 +1,23 @@
+# Degree
+d = 3
+
+# Space for velocity field. Vector element on vertex level with 3 degrees of freedom, 1st order interpolation (linear over cells)
+K1 = VectorElement("Lagrange", "tetrahedron", 1)
+# Space for gradient. Piecewise constant d*d vector on cell level (0 degree interpolation, discontinuous)
+K2 = VectorElement("Discontinuous Lagrange", "tetrahedron", 0, d*d)
+# Space for inverse of cell volume. Piecewise constant on cell level (0 degree interpolation, discontinuous)
+K4 = FiniteElement("Discontinuous Lagrange", "tetrahedron", 0)
+
+v = TestFunction(K2)
+gradu = TrialFunction(K2)
+u = Coefficient(K1) # Velocity field
+
+icv = Coefficient(K4) # Inverse of cell volume. When integrating grad(u) over the cell, we also need to divide by cell volume
+
+def tomatrix(q):
+    return as_matrix([ [q[d * i + j] for i in range(d)] for j in range(d) ])
+
+vm = tomatrix(v)
+
+a = (inner(gradu,v))*dx
+L = icv*inner(grad(u),vm)*dx # Assembling a vector from L will give the gradient of u
