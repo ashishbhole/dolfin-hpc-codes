@@ -137,7 +137,7 @@ int main()
 {
   dolfin_init();
 
-  UnitSquare mesh(100, 100);
+  UnitSquare mesh(200, 200);
 
   elasticity_finite_element_0 FE;
   uint m = FE.degree();
