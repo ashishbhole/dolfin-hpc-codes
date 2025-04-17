@@ -28,7 +28,7 @@ using namespace dolfin;
 
 real bmarg = 1.0e-3 + DOLFIN_EPS;
 
-real Tfinal = 100; //0.05;
+real Tfinal = 0.05;
 real ubar = 1.0; // Free stream velocity
 real ubar_max = 1.0;
 
@@ -533,34 +533,65 @@ void ComputeMeanResidual(Mesh& mesh, Function& vmean, Function& v) //, Form& for
 // Refine the n% of cells that have the highest residual values
 void ComputeRefinementMarkers(Mesh& mesh, Function& residuals, MeshValues<bool, Cell>& cell_markers, const real& percentage)
 {
-  std::vector<real> residual_vector(residuals.vector().local_size());  // Create a vector of the same size
-                                                                       //  residuals.vector()->get(residual_vector.data());                // Copy values into residuals
-  residuals.vector().get(residual_vector.data());
+  // Get local number of cells
+  int local_num_cells = mesh.num_cells();
+
+  // Copy local residuals to array, needed for Gatherv
+  real* local_residuals = new real[local_num_cells];
+  residuals.vector().get(local_residuals);
 
   // Step 1: Gather residuals across all MPI processes
-  std::vector<double> global_residuals(mesh.num_global_cells());
-  dolfin::MPI::gather(residual_vector.data(), residual_vector.size(), global_residuals.data(), mesh.num_global_cells(), 0);
+  // Initialize global residual vector, only to be used on rank 0
+  std::vector<real> global_residuals;
+  if (dolfin::MPI::rank() == 0)
+    global_residuals.resize(mesh.num_global_cells());
 
-  // Step 1: Find the nth percentile
+  // Gather local number of cells from all ranks into recv_counts on rank 0, and compute
+  // their displacements in global_residuals
+  int *recv_counts = new int[dolfin::MPI::global_size()];
+  int *displs = new int[dolfin::MPI::global_size()];
+  dolfin::MPI::gather(&local_num_cells, 1, recv_counts, 1, 0, dolfin::MPI::DOLFIN_COMM);
+  displs[0] = 0;
+  for(int i = 1; i < dolfin::MPI::global_size(); i++)
+  {
+    displs[i] = displs[i-1] + recv_counts[i-1];
+  }
+
+  // Gather local residuals from all ranks into global_residuals on rank 0
+  MPI_Gatherv(local_residuals, local_num_cells, MPI_DOUBLE, global_residuals.data(), recv_counts, displs, MPI_DOUBLE, 0, dolfin::MPI::DOLFIN_COMM);
+  MPI_Barrier(dolfin::MPI::DOLFIN_COMM);
+  message("Successfully gathered all residuals into global vector on rank 0");
+
+  // Step 2: Find the threshold for the requested percentile
   double threshold = 0.0;
-  //  if (dolfin::MPI::rank() == 0)
-  //  {
-  //    size_t top_index = static_cast<size_t>((1.0 - percentage) * global_residuals.size()); // Index for the nth percentile
-  //    std::nth_element(global_residuals.begin(), global_residuals.begin() + top_index, global_residuals.end());
-  //    threshold = global_residuals[top_index];  // Residual value at the nth percentile
-  //  }
+  if (dolfin::MPI::rank() == 0)
+  {
+    size_t top_index = static_cast<size_t>((1.0 - percentage) * global_residuals.size()); // Index for the nth percentile
+    std::nth_element(global_residuals.begin(), global_residuals.begin() + top_index, global_residuals.end());
+    threshold = global_residuals[top_index];  // Residual value at the nth percentile
+  }
 
   // Step 3: Broadcast threshold to all ranks
   MPI_Bcast(&threshold, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  message("Residual threshold %g computed for the %.2f percentile", threshold, 100*percentage);
 
-  //  for(CellIterator c(mesh); !c.end(); ++c)
-  //  {
-  //    size_t global_index = mesh.distdata()[3].get_global(c->index());
-  //    size_t cell_index = c->index();
-  //    cell_markers(*c) = (residual_vector[cell_index] > threshold);
-  //  }
+  // Step 4: Mark all cells with residual higher than the threshold value
+  for(CellIterator c(mesh); !c.end(); ++c)
+  {
+    //size_t global_index = mesh.distdata()[3].get_global(c->index());
+    size_t cell_index = c->index();
+    cell_markers(*c) = (local_residuals[cell_index] > threshold);
+  }
+
+  // TODO: Printing refinement markers and residuals to file, can remove or condition this later
   File cell_marker_file("refinement_marker.pvd");
   cell_marker_file << cell_markers;
+  File residual_file("residuals.pvd");
+  residual_file << residuals;
+
+  delete[] local_residuals;
+  delete[] recv_counts;
+  delete[] displs;
 }
 
 // Mesh refinement copied from unicorn
@@ -568,7 +599,7 @@ void MeshRefinement(Mesh& mesh, Function& residuals)
 {
   // Define percentage of cells to refine. Could set the number somewhere else
   //  dolfin_set("adapt_percentage", 0.1);
-  dolfin_add<real>("adapt_percentage", 0.1);
+  dolfin_add<real>("adapt_percentage", 0.3);
   real percentage = dolfin_get<real>("adapt_percentage");
   //  real percentage = 0.1;
   dolfin_add("adapt_algorithm", "rivara");
@@ -938,41 +969,20 @@ void computeTripleDecomposition(Mesh& mesh, Gradient::BilinearForm& aGrad, Gradi
   delete[] gradU_block;
 }
 
+// Initialize everything that depends on the mesh. Call this at the start, and after adaptive mesh refinement
+/*void initialize(Mesh mesh)
+{
+  message("(Re-)initializing");
+
+  set_time_step(mesh);
+
+  set_boundary_conditions(mesh);
+}*/
+
 int main(int argc, char* argv[])
 {
-  // This doesn't do anything if done before dolfin_init? Besides, dolfin_init does this too
-  //  if(dolfin::MPI::rank() == 0)
-  //    dolfin_set("output destination", "terminal");
-  //  else
-  //    dolfin_set("output destination", "silent");
-
-  dolfin_set("NodeNormal dump types", true);
-  //  dolfin_set("NodeNormal restricted", true); // don't know what this is
-  //  dolfin_set("Mesh partitioner", "zoltan");
-
   dolfin_init(argc, argv);
-  //  dolfin_set("output destination", "silent");
-  //  Mesh mesh("cylinder.bin");
-  //  Mesh mesh("cylinder-gmsh.bin");
   Mesh mesh("cylinder_3d_bmk.bin"); // Original coarse cylinder mesh
-  //  Mesh mesh("cylinder_3d_bmk_refined1.bin");
-  //  Mesh mesh("cylinder-ashish.bin"); // Extruded, best one for now
-  //  mesh.refine(); //TODO: testing mesh refinement
-  //  File meshfile("cylinder_3d_bmk_refined1.bin");
-  //  meshfile << mesh;
-  //  Mesh mesh("cube.bin");
-
-  //  File mesh_file("boundary_mesh.pvd");
-  //  mesh_file << mesh.exterior_boundary();
-  BoundaryMesh& boundary = mesh.exterior_boundary();
-  for(VertexIterator v(boundary); !v.end(); ++v)
-  {
-    //    std::cout << v->x()[0] << ", " << v->x()[1] << ", " << v->x()[2] << ", " << std::endl;
-  }
-
-  // File to write the numerical solution
-  //  File u_file("u.pvd");
-  //  File p_file("p.pvd");
 
   // Set time step (proportional to the minimum cell diameter) 
   // Get minimum cell diameter
@@ -1000,10 +1010,8 @@ int main(int argc, char* argv[])
   HorizontalSlipBoundary horizontal_slip_boundary;
   VerticalSlipBoundary vertical_slip_boundary;
   CylinderSlipBoundary cylinder_slip_boundary;
-  //  PeriodicBoundary periodic_boundary;
 
   OutflowBoundary outflow_boundary;
-  //  SideWallBoundary sidewall_boundary; // Only used in dual, why?
 
   // NodeNormal doesn't handle corners well, so we create three instances of it, and manually manipulate the horizontal and vertical normals
   NodeNormal horizontal_node_normal(mesh, NodeNormal::facet, DOLFIN_PI/3); // pi/1.9 in unicorn/icns-newton. But it doesn't affect normals, only tangents
@@ -1277,17 +1285,6 @@ int main(int argc, char* argv[])
       iteration = 0;
 
       // HeartSolver/Dolfin 0.8 assembling
-      /*    if(assembler_con)
-            {
-            delete assembler_con;
-            }
-            assembler_con = new Assembler(mesh());
-            if(assembler_mom)
-            {
-            delete assembler_mom;
-            }
-            assembler_mom = new Assembler(mesh());
-       */
       // Fix-point iteration for non-linear problem 
       while((residual > rtol && iteration < max_iteration) ||
           (residual2 > rtol2 && iteration < max_iteration) ||
@@ -1311,13 +1308,6 @@ int main(int argc, char* argv[])
           A_mom.zero();
         }
 
-        /*      {
-                b_con *= -1;
-                A_con *= -1;
-                b_mom *= -1;
-                A_mom *= -1;
-                }
-         */
         message("norm(u): %g", u.vector().norm(l2));
         message("norm(up): %g", up.vector().norm(l2));
         message("norm(u0): %g", u0.vector().norm(l2));
@@ -1338,18 +1328,6 @@ int main(int argc, char* argv[])
         // Trying to add old A_con
         if(false)//(step > 0)
         {
-          /*        real* A_con_old = new real[A_con.size(0)*A_con.size(0)];
-                    size_t* A_con_rows = new size_t[A_con.size(0)];
-                    size_t* A_con_cols = new size_t[A_con.size(0)];
-                    for(size_t i = 0; i < A_con.size(0); i++)
-                    {
-                    A_con_rows[i] = i;
-                    A_con_cols[i] = i;
-                    }
-                    A_con.get(A_con_old, A_con.size(0), A_con_rows, A_con.size(0), A_con_cols);
-                    a_con.assemble(A_con, true);
-                    A_con.add(A_con_old, A_con.size(0), A_con_rows, A_con.size(0), A_con_cols);
-           */
           PETScMatrix A_con_old(A_con.size(0), A_con.size(0), false);
           A_con_old.dup(A_con);
           a_con.assemble(A_con, true);
@@ -1369,13 +1347,6 @@ int main(int argc, char* argv[])
 
         std::pair<size_t, size_t> diagonal_index;
         // TODO: adding identity matrix to A_con as well
-        /*      for(size_t i = 0; i < A_con.size(0); i++)
-                {
-                diagonal_index = {i, i};
-        //message("%g",A_con(i,i));
-        A_con.setitem(diagonal_index, A_con(i,i) + 1.0);
-        A_con.apply();
-        }*///TODO: adding an identity matrix gives a correct solution, but is it just because A_mom is small?
         for(uint i = 0; i < bc_con.size(); i++)
         {
           //        if(step < 15)
@@ -1459,36 +1430,9 @@ int main(int argc, char* argv[])
         message("norm(A) after BC: %g", A_mom.norm("frobenius"));
         //      message("norm(b): %g", b_mom.norm(l2));
         message("A*u-b=%g", residual_mom.norm(l2));
-        /*      message("u-b=%g", u_minus_b.norm(l2));
-                message("norm(u): %g", u.vector().norm(l2));
-                message("norm(up): %g", up.vector().norm(l2));
-                message("norm(u0): %g", u0.vector().norm(l2));*/
-        //      message("after BC:");
-        //      compute_condition_number(A_mom);
-        //A_mom.spy();
-
-        // Compute residuals (why here and not after mom? This uses u from previous iteration but p from this one, why?)
-        /*      A_mom.mult(u.vector(), residual_mom);
-                residual_mom -= b_mom;
-                A_con.mult(p.vector(), residual_con);
-                residual_con -= b_con;
-
-                residual2 = sqrt(sqr(residual_mom.norm()) + sqr(residual_con.norm()));
-         */
         // Solve the momentum equation
         solver_mom.solve(A_mom, u.vector(), b_mom);
-        /*      message("After solve");
-                message("norm(u): %g", u.vector().norm(l2));
-                message("norm(up): %g", up.vector().norm(l2));
-                message("norm(u0): %g", u0.vector().norm(l2));*/
         u.sync();
-
-        // Murtazo addition: need value in u first, which we have from the first solve. Now, apply murtazo_slip_bc (solve again?)
-        //      up = u;
-        //      murtazo_slip_bc.apply(A_mom, b_mom, a_mom);
-        //      murtazo_slip_bc.apply(A_mom, u.vector(), a_mom); // Does this work? Applying with u instead of b should be enough?
-        //      solver_mom.solve(A_mom, u.vector(), b_mom);
-        //      u.sync();
 
         // Residual2 moved here
         residual_mom = 0;
@@ -1516,7 +1460,6 @@ int main(int argc, char* argv[])
         }
 
         residual_mom = u.vector();
-        //      residual_mom -= up.vector(); // Should it be up here, not u0? up is the velocity from the previous iteration, whereas u0 is from the previous step, so up makes sense for residual
         residual_mom -= up.vector(); // Comparing u after solve before murtazo shift with the same from last time step
         residual_m = 0;
         if(u.vector().norm(linf) > 1.0e-8)
@@ -1525,29 +1468,6 @@ int main(int argc, char* argv[])
           residual += residual_m;
         }
 
-        /*      // Moved to really after residuals
-                // Murtazo addition: need value in u first, which we have from the first solve. Now, apply murtazo_slip_bc (solve again?)
-                //      murtazo_slip_bc.apply(A_mom, b_mom, a_mom);
-                //      murtazo_slip_bc.apply(A_mom, u.vector(), a_mom); // Does this work? Applying with u instead of b should be enough?
-                for(uint i = 0; i < bc_murtazo.size(); i++)
-                {
-                bc_murtazo[i]->apply(A_mom, u.vector(), a_mom);
-                }
-        //      solver_mom.solve(A_mom, u.vector(), b_mom);
-        u.sync();*/
-
-        //      u_file << u;
-        //      Function residual_function(mesh);
-        //      residual_function.vector() = residual;
-        //      residual_file << residual_function;
-        //      message("norm(u): %g", u.vector().norm(l2));
-        //      message("norm(up): %g", up.vector().norm(l2));
-        //      message("norm(p): %g", p.vector().norm(l2));
-
-        //      message("residual_c: %g", residual_c);
-        //      message("residual_m: %g", residual_m);
-        //      A_mom.mult(u.vector(), residual_mom);
-        //      residual_mom -= b_mom;
         message("residual_mom: %g", residual_mom.norm(l2));
         message("residual2: %e", residual2);
         message("residual: %g", residual);
@@ -1564,8 +1484,6 @@ int main(int argc, char* argv[])
       computeTripleDecomposition(mesh, aGrad, LGrad, u, vol_inv, triple_shear, triple_strain, triple_rotation);
 
       // Compute residual
-      //    ComputeMean(mesh, um, u);
-      //    ComputeMean(mesh, pm, p);
       message("residual function vector size: %d", residual_function.vector().size());
       LRes.assemble(residual_function.vector(), false); // false means reassemble, which we always want?
       ComputeMeanResidual(mesh, residual_cell, residual_function);
@@ -1589,7 +1507,7 @@ int main(int argc, char* argv[])
       message("------------------------------------ Step %d finished ------------------------------------", step);
     }
 
-    if(false)
+    if(true)
     {
       // Refine mesh, then reset simulation time and solution
       MeshRefinement(mesh, residual_cell);
@@ -1601,7 +1519,6 @@ int main(int argc, char* argv[])
       p.zero();
     }
   }
-
   //  unicorn_solve(mesh, chkp, w_limit, s_time, iter, 0, &smooth, &solve);
 
   dolfin_finalize();
