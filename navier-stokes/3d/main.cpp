@@ -19,6 +19,7 @@
 #include "NavierStokesContinuity3D.h"
 #include "Gradient.h"
 #include "Residual.h"
+#include "Project_DG0_to_CG1.h"
 
 #include <sstream>
 #include <lapack.h>
@@ -959,14 +960,33 @@ void computeTripleDecomposition(Mesh& mesh, Gradient::BilinearForm& aGrad, Gradi
     triple_strain.vector().set(&strain, 1, &global_index);
     triple_rotation.vector().set(&rotation, 1, &global_index);
   }
+
+  // Apply and sync ghosts
   triple_shear.vector().apply();
   triple_shear.sync();
   triple_strain.vector().apply();
   triple_strain.sync();
   triple_rotation.vector().apply();
   triple_rotation.sync();
+
   delete[] idx;
   delete[] gradU_block;
+}
+
+void project_DG0_to_CG1(Mesh mesh, Function DG0_function, Function CG1_function, bool reset_matrix)
+{
+  KrylovSolver solver;
+
+  Project_DG0_to_CG1::BilinearForm a(mesh);
+  Project_DG0_to_CG1::LinearForm L(mesh, DG0_function);
+
+  PETScMatrix A;
+  Vector b;
+
+  a.assemble(A, reset_matrix);
+  L.assemble(b, reset_matrix);
+
+  solver.solve(A, CG1_function.vector(), b);
 }
 
 // Initialize everything that depends on the mesh. Call this at the start, and after adaptive mesh refinement
@@ -1095,8 +1115,6 @@ int main(int argc, char* argv[])
   //  Analytic<InitialPressure> p0(mesh); // Is this needed or used? How else to set initial pressure?
 
   // Create forms
-  //  NavierStokes3D::BilinearForm a_mom(mesh, up, nu, dt); //d1, d2, dt);
-  //  NavierStokes3Dmin::BilinearForm a_mom(mesh);
   NavierStokes3D_force::BilinearForm a_mom(mesh, up, nu, d1, d2, dt);
   NavierStokesContinuity3D::BilinearForm a_con(mesh, d1);
   Function u(a_mom.trial_space());
@@ -1208,10 +1226,15 @@ int main(int argc, char* argv[])
                                                               //  pm.init(LRes.create_coefficient_space("P"));
   residual_cell.init(LRes.create_coefficient_space("k"));
 
-  // Initialize Triple Decomposition functions
+  // Initialize piecewise constant triple decomposition functions
   Function triple_shear(mesh);
   Function triple_strain(mesh);
   Function triple_rotation(mesh);
+  // Initialize piecewise linear triple decomposition functions, needed to
+  // print to binary file format
+  Function shear_linear(mesh);
+  Function strain_linear(mesh);
+  Function rotation_linear(mesh);
 
   Function vol_inv(mesh);
 
@@ -1224,12 +1247,15 @@ int main(int argc, char* argv[])
   triple_shear.init(LGrad.create_coefficient_space("icv"));
   triple_strain.init(LGrad.create_coefficient_space("icv"));
   triple_rotation.init(LGrad.create_coefficient_space("icv"));
+  shear_linear.init(LGrad.create_coefficient_space("u"));
+  strain_linear.init(LGrad.create_coefficient_space("u"));
+  rotation_linear.init(LGrad.create_coefficient_space("u"));
 
   // Compute inverse of mesh cell volumes, needed to compute the triple decomposition
   ComputeVolInv(mesh, vol_inv);
 
   // Output file
-  File solutionfile("solution.pvd");
+  File solutionfile("solution.bin");
   //  std::vector<std::pair<Function*, std::string> > output;
   LabelList<Function> output;
   //  std::pair<Function*, std::string> u_output(&u, "Velocity");
@@ -1238,17 +1264,17 @@ int main(int argc, char* argv[])
   Label<Function> u_output(u, "Velocity");
   Label<Function> p_output(p, "Pressure");
   Label<Function> n_output(sub_node_normal.basis()[0], "Normals");
-  Label<Function> sh_output(triple_shear, "Shear");
-  Label<Function> el_output(triple_strain, "Strain");
-  Label<Function> rr_output(triple_rotation, "Rotation");
-  Label<Function> res_output(residual_cell, "Residual");
+  Label<Function> sh_output(shear_linear, "Shear");
+  Label<Function> el_output(strain_linear, "Strain");
+  Label<Function> rr_output(rotation_linear, "Rotation");
+//  Label<Function> res_output(residual_cell, "Residual");
   output.push_back(u_output);
   output.push_back(p_output);
   output.push_back(n_output);
   output.push_back(sh_output);
   output.push_back(el_output);
   output.push_back(rr_output);
-  output.push_back(res_output);
+//  output.push_back(res_output);
 
   // Debugging files
   File residual_file("residual.pvd");
@@ -1480,9 +1506,6 @@ int main(int argc, char* argv[])
         //        last_residual = residual;
       } // Fix-point iteration for non-linear problem closed
 
-      // Compute triple decomposition
-      computeTripleDecomposition(mesh, aGrad, LGrad, u, vol_inv, triple_shear, triple_strain, triple_rotation);
-
       // Compute residual
       message("residual function vector size: %d", residual_function.vector().size());
       LRes.assemble(residual_function.vector(), false); // false means reassemble, which we always want?
@@ -1498,9 +1521,13 @@ int main(int argc, char* argv[])
       //    if(true) // Print every timestep
       if(step < 100 || std::floor(10*t) > std::floor(10*(t-tstep))) // Print the 100 first timesteps, then ten times per simulated second
       {
-        //      u_file << u; //u;
-        //      cylinder_slip_bc.normal().basis()[0].sync();
-        //      p_file << p; //cylinder_node_normal.basis()[0]; //cylinder_slip_bc.normal().basis()[1];//p; //vertical_node_normal.basis()[0]; //p;
+        // Compute triple decomposition
+        computeTripleDecomposition(mesh, aGrad, LGrad, u, vol_inv, triple_shear, triple_strain, triple_rotation);
+
+        project_DG0_to_CG1(mesh, triple_shear, shear_linear, step == 1);
+        project_DG0_to_CG1(mesh, triple_strain, strain_linear, step == 1);
+        project_DG0_to_CG1(mesh, triple_rotation, rotation_linear, step == 1);
+
         solutionfile << output;
       }
 #endif

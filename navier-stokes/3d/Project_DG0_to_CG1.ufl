@@ -1,0 +1,22 @@
+# Copyright (c) 2025 Joel Kronborg
+# Licensed under the GNU GPL Version 2
+#
+# First added:  2025
+# Last changed: 2025-04-22
+#
+# Projection from piecewise constant to piecewise linear, i.e. from scalar on
+# cell level to scalar on vertex level. Dolfin output binary format requires
+# data on vertex level, so use this before printing cellwise data to file.
+# Compile this form with FFC: ffc -l dolfin_hpc Project_DG0_to_CG1.ufl
+
+element_src = FiniteElement("DG", tetrahedron, 0)   # Discontinuous, piecewise constant
+element_dst = FiniteElement("CG", tetrahedron, 1)   # Continuous, piecewise linear
+
+v = TestFunction(element_dst)  # in CG1
+u = TrialFunction(element_dst) # we're solving for u in CG1
+
+f = Coefficient(element_src)   # the DG0 data we're projecting
+
+a = inner(u, v)*dx             # standard L2 projection form
+L = inner(f, v)*dx
+
