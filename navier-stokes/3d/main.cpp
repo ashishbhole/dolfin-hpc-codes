@@ -1003,6 +1003,10 @@ int main(int argc, char* argv[])
 {
   dolfin_init(argc, argv);
   Mesh mesh("cylinder_3d_bmk.bin"); // Original coarse cylinder mesh
+  
+  // Print the mesh to new file, needed for dolfin-post
+  File meshfile("meshfile.bin");
+  meshfile << mesh;
 
   // Set time step (proportional to the minimum cell diameter) 
   // Get minimum cell diameter
@@ -1255,8 +1259,14 @@ int main(int argc, char* argv[])
   // Compute inverse of mesh cell volumes, needed to compute the triple decomposition
   ComputeVolInv(mesh, vol_inv);
 
-  // Output file
+  // Output files
   File solutionfile("solution.bin");
+  File u_file("output_u.bin");
+  File p_file("output_p.bin");
+  File normals_file("output_normals.bin");
+  File shear_file("output_shear.bin");
+  File strain_file("output_strain.bin");
+  File rotation_file("output_rotation.bin");
   //  std::vector<std::pair<Function*, std::string> > output;
   LabelList<Function> output;
   //  std::pair<Function*, std::string> u_output(&u, "Velocity");
@@ -1285,6 +1295,12 @@ int main(int argc, char* argv[])
   //  u_file << u0; //u0;
   //  p_file << sub_node_normal.basis()[0]; //horizontal_node_normal.basis()[0]; //p0;
   solutionfile << output;
+  u_file << u_output;
+  p_file << p_output;
+  normals_file << n_output;
+  shear_file << sh_output;
+  strain_file << el_output;
+  rotation_file << rr_output;
 #endif
 
   // HeartSolver/Dolfin 0.8 assembling
@@ -1530,6 +1546,12 @@ int main(int argc, char* argv[])
         project_DG0_to_CG1(mesh, triple_rotation, rotation_linear, step == 1);
 
         solutionfile << output;
+        u_file << u_output;
+        p_file << p_output;
+        normals_file << n_output;
+        shear_file << sh_output;
+        strain_file << el_output;
+        rotation_file << rr_output;
       }
 #endif
       message("------------------------------------ Step %d finished ------------------------------------", step);
