@@ -4605,7 +4605,7 @@ public:
 
   const std::vector<bool> & enabled_coefficients() const final override
   {
-static const std::vector<bool> enabled({true, true, true, true, true});
+static const std::vector<bool> enabled({true, true, true, true, true, false});
 return enabled;
   }
 
@@ -5556,6 +5556,327 @@ return enabled;
 };
 
 
+class navierstokes3d_force_exterior_facet_integral_0_otherwise: public ufc::exterior_facet_integral
+{
+public:
+
+  navierstokes3d_force_exterior_facet_integral_0_otherwise() : ufc::exterior_facet_integral()
+  {
+
+  }
+
+  ~navierstokes3d_force_exterior_facet_integral_0_otherwise() override
+  {
+
+  }
+
+  const std::vector<bool> & enabled_coefficients() const final override
+  {
+static const std::vector<bool> enabled({false, false, false, false, false, true});
+return enabled;
+  }
+
+  void tabulate_tensor(double * A,
+                       const double * const * w,
+                       const double * coordinate_dofs,
+                       std::size_t facet,
+                       int cell_orientation) const final override
+  {
+    // This function was generated using 'uflacs' representation
+    // with the following integrals metadata:
+    // 
+    // num_cells:         None
+    // optimize:          True
+    // precision:         16
+    // quadrature_degree: 2
+    // quadrature_rule:   'default'
+    // representation:    'uflacs'
+    // 
+    // and the following integral 0 metadata:
+    // 
+    // estimated_polynomial_degree: 2
+    // optimize:                    True
+    // precision:                   16
+    // quadrature_degree:           2
+    // quadrature_rule:             'default'
+    // representation:              'uflacs'
+    // Quadrature rules
+    alignas(32) static const double weights3[3] = { 0.1666666666666667, 0.1666666666666667, 0.1666666666666667 };
+    // Precomputed values of basis functions and precomputations
+    // FE* dimensions: [entities][points][dofs]
+    // PI* dimensions: [entities][dofs][dofs] or [entities][dofs]
+    // PM* dimensions: [entities][dofs][dofs]
+    alignas(32) static const double FE15_C0_D001_F_Q3[1][1][2] = { { { -1.0, 1.0 } } };
+    alignas(32) static const double FE15_C0_F_Q3[4][3][4] =
+        { { { 0.0, 0.6666666666666666, 0.1666666666666667, 0.1666666666666666 },
+            { 0.0, 0.1666666666666668, 0.1666666666666667, 0.6666666666666665 },
+            { 0.0, 0.1666666666666667, 0.6666666666666666, 0.1666666666666666 } },
+          { { 0.6666666666666669, 0.0, 0.1666666666666667, 0.1666666666666666 },
+            { 0.1666666666666668, 0.0, 0.1666666666666667, 0.6666666666666665 },
+            { 0.1666666666666668, 0.0, 0.6666666666666666, 0.1666666666666666 } },
+          { { 0.6666666666666666, 0.1666666666666667, 0.0, 0.1666666666666666 },
+            { 0.1666666666666669, 0.1666666666666667, 0.0, 0.6666666666666665 },
+            { 0.1666666666666668, 0.6666666666666665, 0.0, 0.1666666666666666 } },
+          { { 0.6666666666666667, 0.1666666666666666, 0.1666666666666667, 0.0 },
+            { 0.1666666666666668, 0.1666666666666665, 0.6666666666666666, 0.0 },
+            { 0.1666666666666667, 0.6666666666666665, 0.1666666666666667, 0.0 } } };
+    // Unstructured piecewise computations
+    const double J_c4 = coordinate_dofs[1] * FE15_C0_D001_F_Q3[0][0][0] + coordinate_dofs[7] * FE15_C0_D001_F_Q3[0][0][1];
+    const double J_c8 = coordinate_dofs[2] * FE15_C0_D001_F_Q3[0][0][0] + coordinate_dofs[11] * FE15_C0_D001_F_Q3[0][0][1];
+    const double J_c5 = coordinate_dofs[1] * FE15_C0_D001_F_Q3[0][0][0] + coordinate_dofs[10] * FE15_C0_D001_F_Q3[0][0][1];
+    const double J_c7 = coordinate_dofs[2] * FE15_C0_D001_F_Q3[0][0][0] + coordinate_dofs[8] * FE15_C0_D001_F_Q3[0][0][1];
+    const double J_c0 = coordinate_dofs[0] * FE15_C0_D001_F_Q3[0][0][0] + coordinate_dofs[3] * FE15_C0_D001_F_Q3[0][0][1];
+    const double J_c1 = coordinate_dofs[0] * FE15_C0_D001_F_Q3[0][0][0] + coordinate_dofs[6] * FE15_C0_D001_F_Q3[0][0][1];
+    const double J_c6 = coordinate_dofs[2] * FE15_C0_D001_F_Q3[0][0][0] + coordinate_dofs[5] * FE15_C0_D001_F_Q3[0][0][1];
+    const double J_c3 = coordinate_dofs[1] * FE15_C0_D001_F_Q3[0][0][0] + coordinate_dofs[4] * FE15_C0_D001_F_Q3[0][0][1];
+    const double J_c2 = coordinate_dofs[0] * FE15_C0_D001_F_Q3[0][0][0] + coordinate_dofs[9] * FE15_C0_D001_F_Q3[0][0][1];
+    alignas(32) double sp[112];
+    sp[0] = J_c4 * J_c8;
+    sp[1] = J_c5 * J_c7;
+    sp[2] = sp[0] + -1 * sp[1];
+    sp[3] = J_c0 * sp[2];
+    sp[4] = J_c5 * J_c6;
+    sp[5] = J_c3 * J_c8;
+    sp[6] = sp[4] + -1 * sp[5];
+    sp[7] = J_c1 * sp[6];
+    sp[8] = sp[3] + sp[7];
+    sp[9] = J_c3 * J_c7;
+    sp[10] = J_c4 * J_c6;
+    sp[11] = sp[9] + -1 * sp[10];
+    sp[12] = J_c2 * sp[11];
+    sp[13] = sp[8] + sp[12];
+    sp[14] = sp[2] / sp[13];
+    sp[15] = tetrahedron_reference_facet_normals[facet][0] * sp[14];
+    sp[16] = J_c3 * (-1 * J_c8);
+    sp[17] = sp[4] + sp[16];
+    sp[18] = sp[17] / sp[13];
+    sp[19] = tetrahedron_reference_facet_normals[facet][1] * sp[18];
+    sp[20] = sp[15] + sp[19];
+    sp[21] = sp[11] / sp[13];
+    sp[22] = tetrahedron_reference_facet_normals[facet][2] * sp[21];
+    sp[23] = sp[20] + sp[22];
+    sp[24] = sp[23] * sp[23];
+    sp[25] = J_c2 * J_c7;
+    sp[26] = J_c8 * (-1 * J_c1);
+    sp[27] = sp[25] + sp[26];
+    sp[28] = sp[27] / sp[13];
+    sp[29] = tetrahedron_reference_facet_normals[facet][0] * sp[28];
+    sp[30] = J_c0 * J_c8;
+    sp[31] = J_c6 * (-1 * J_c2);
+    sp[32] = sp[30] + sp[31];
+    sp[33] = sp[32] / sp[13];
+    sp[34] = tetrahedron_reference_facet_normals[facet][1] * sp[33];
+    sp[35] = sp[29] + sp[34];
+    sp[36] = J_c1 * J_c6;
+    sp[37] = J_c0 * J_c7;
+    sp[38] = sp[36] + -1 * sp[37];
+    sp[39] = sp[38] / sp[13];
+    sp[40] = tetrahedron_reference_facet_normals[facet][2] * sp[39];
+    sp[41] = sp[35] + sp[40];
+    sp[42] = sp[41] * sp[41];
+    sp[43] = sp[24] + sp[42];
+    sp[44] = J_c1 * J_c5;
+    sp[45] = J_c2 * J_c4;
+    sp[46] = sp[44] + -1 * sp[45];
+    sp[47] = sp[46] / sp[13];
+    sp[48] = tetrahedron_reference_facet_normals[facet][0] * sp[47];
+    sp[49] = J_c2 * J_c3;
+    sp[50] = J_c0 * J_c5;
+    sp[51] = sp[49] + -1 * sp[50];
+    sp[52] = sp[51] / sp[13];
+    sp[53] = tetrahedron_reference_facet_normals[facet][1] * sp[52];
+    sp[54] = sp[48] + sp[53];
+    sp[55] = J_c0 * J_c4;
+    sp[56] = J_c1 * J_c3;
+    sp[57] = sp[55] + -1 * sp[56];
+    sp[58] = sp[57] / sp[13];
+    sp[59] = tetrahedron_reference_facet_normals[facet][2] * sp[58];
+    sp[60] = sp[54] + sp[59];
+    sp[61] = sp[60] * sp[60];
+    sp[62] = sp[43] + sp[61];
+    sp[63] = std::sqrt(sp[62]);
+    sp[64] = sp[23] / sp[63];
+    sp[65] = sp[41] / sp[63];
+    sp[66] = sp[60] / sp[63];
+    sp[67] = tetrahedron_reference_facet_jacobian[facet][0][0] * J_c3;
+    sp[68] = tetrahedron_reference_facet_jacobian[facet][1][0] * J_c4;
+    sp[69] = sp[67] + sp[68];
+    sp[70] = J_c5 * tetrahedron_reference_facet_jacobian[facet][2][0];
+    sp[71] = sp[69] + sp[70];
+    sp[72] = tetrahedron_reference_facet_jacobian[facet][0][1] * J_c6;
+    sp[73] = tetrahedron_reference_facet_jacobian[facet][1][1] * J_c7;
+    sp[74] = sp[72] + sp[73];
+    sp[75] = tetrahedron_reference_facet_jacobian[facet][2][1] * J_c8;
+    sp[76] = sp[74] + sp[75];
+    sp[77] = sp[71] * sp[76];
+    sp[78] = tetrahedron_reference_facet_jacobian[facet][0][1] * J_c3;
+    sp[79] = J_c4 * tetrahedron_reference_facet_jacobian[facet][1][1];
+    sp[80] = sp[78] + sp[79];
+    sp[81] = J_c5 * tetrahedron_reference_facet_jacobian[facet][2][1];
+    sp[82] = sp[80] + sp[81];
+    sp[83] = tetrahedron_reference_facet_jacobian[facet][0][0] * J_c6;
+    sp[84] = tetrahedron_reference_facet_jacobian[facet][1][0] * J_c7;
+    sp[85] = sp[83] + sp[84];
+    sp[86] = tetrahedron_reference_facet_jacobian[facet][2][0] * J_c8;
+    sp[87] = sp[85] + sp[86];
+    sp[88] = sp[82] * sp[87];
+    sp[89] = sp[77] + -1 * sp[88];
+    sp[90] = sp[89] * sp[89];
+    sp[91] = J_c0 * tetrahedron_reference_facet_jacobian[facet][0][1];
+    sp[92] = J_c1 * tetrahedron_reference_facet_jacobian[facet][1][1];
+    sp[93] = sp[91] + sp[92];
+    sp[94] = J_c2 * tetrahedron_reference_facet_jacobian[facet][2][1];
+    sp[95] = sp[93] + sp[94];
+    sp[96] = sp[95] * sp[87];
+    sp[97] = J_c0 * tetrahedron_reference_facet_jacobian[facet][0][0];
+    sp[98] = J_c1 * tetrahedron_reference_facet_jacobian[facet][1][0];
+    sp[99] = sp[97] + sp[98];
+    sp[100] = J_c2 * tetrahedron_reference_facet_jacobian[facet][2][0];
+    sp[101] = sp[99] + sp[100];
+    sp[102] = sp[101] * sp[76];
+    sp[103] = sp[96] + -1 * sp[102];
+    sp[104] = sp[103] * sp[103];
+    sp[105] = sp[90] + sp[104];
+    sp[106] = sp[101] * sp[82];
+    sp[107] = sp[71] * sp[95];
+    sp[108] = sp[106] + -1 * sp[107];
+    sp[109] = sp[108] * sp[108];
+    sp[110] = sp[105] + sp[109];
+    sp[111] = std::sqrt(sp[110]);
+    alignas(32) double BF0[4][4] = {};
+    alignas(32) double BF1[4][4] = {};
+    alignas(32) double BF2[4][4] = {};
+    alignas(32) double BF3[4][4] = {};
+    alignas(32) double BF4[4][4] = {};
+    alignas(32) double BF5[4][4] = {};
+    alignas(32) double BF6[4][4] = {};
+    alignas(32) double BF7[4][4] = {};
+    alignas(32) double BF8[4][4] = {};
+    for (int iq = 0; iq < 3; ++iq)
+    {
+        // Quadrature loop body setup (num_points=3)
+        // Unstructured varying computations for num_points=3
+        const double x_c0 = coordinate_dofs[0] * FE15_C0_F_Q3[facet][iq][0] + coordinate_dofs[3] * FE15_C0_F_Q3[facet][iq][1] + coordinate_dofs[6] * FE15_C0_F_Q3[facet][iq][2] + coordinate_dofs[9] * FE15_C0_F_Q3[facet][iq][3];
+        alignas(32) double sv3[22];
+        sv3[0] = (x_c0 >= 1e-6 && x_c0 <= 2.099999 ? 1.0 : 0.0) * w[5][0];
+        sv3[1] = sv3[0] * sp[64];
+        sv3[2] = sv3[0] * sp[65];
+        sv3[3] = sv3[0] * sp[66];
+        sv3[4] = sv3[1] * sp[64];
+        sv3[5] = sv3[2] * sp[64];
+        sv3[6] = sv3[3] * sp[64];
+        sv3[7] = sv3[1] * sp[65];
+        sv3[8] = sv3[2] * sp[65];
+        sv3[9] = sv3[3] * sp[65];
+        sv3[10] = sv3[1] * sp[66];
+        sv3[11] = sv3[2] * sp[66];
+        sv3[12] = sv3[3] * sp[66];
+        sv3[13] = sv3[4] * sp[111];
+        sv3[14] = sv3[5] * sp[111];
+        sv3[15] = sv3[6] * sp[111];
+        sv3[16] = sv3[7] * sp[111];
+        sv3[17] = sv3[8] * sp[111];
+        sv3[18] = sv3[9] * sp[111];
+        sv3[19] = sv3[10] * sp[111];
+        sv3[20] = sv3[11] * sp[111];
+        sv3[21] = sv3[12] * sp[111];
+        const double fw0 = sv3[13] * weights3[iq];
+        alignas(32) double TF0[4];
+        for (int i = 0; i < 4; ++i)
+            TF0[i] = fw0 * FE15_C0_F_Q3[facet][iq][i];
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j)
+                BF0[i][j] += TF0[i] * FE15_C0_F_Q3[facet][iq][j];
+        const double fw1 = sv3[14] * weights3[iq];
+        alignas(32) double TF1[4];
+        for (int i = 0; i < 4; ++i)
+            TF1[i] = fw1 * FE15_C0_F_Q3[facet][iq][i];
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j)
+                BF1[i][j] += TF1[i] * FE15_C0_F_Q3[facet][iq][j];
+        const double fw2 = sv3[15] * weights3[iq];
+        alignas(32) double TF2[4];
+        for (int i = 0; i < 4; ++i)
+            TF2[i] = fw2 * FE15_C0_F_Q3[facet][iq][i];
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j)
+                BF2[i][j] += TF2[i] * FE15_C0_F_Q3[facet][iq][j];
+        const double fw3 = sv3[16] * weights3[iq];
+        alignas(32) double TF3[4];
+        for (int i = 0; i < 4; ++i)
+            TF3[i] = fw3 * FE15_C0_F_Q3[facet][iq][i];
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j)
+                BF3[i][j] += TF3[i] * FE15_C0_F_Q3[facet][iq][j];
+        const double fw4 = sv3[17] * weights3[iq];
+        alignas(32) double TF4[4];
+        for (int i = 0; i < 4; ++i)
+            TF4[i] = fw4 * FE15_C0_F_Q3[facet][iq][i];
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j)
+                BF4[i][j] += TF4[i] * FE15_C0_F_Q3[facet][iq][j];
+        const double fw5 = sv3[18] * weights3[iq];
+        alignas(32) double TF5[4];
+        for (int i = 0; i < 4; ++i)
+            TF5[i] = fw5 * FE15_C0_F_Q3[facet][iq][i];
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j)
+                BF5[i][j] += TF5[i] * FE15_C0_F_Q3[facet][iq][j];
+        const double fw6 = sv3[19] * weights3[iq];
+        alignas(32) double TF6[4];
+        for (int i = 0; i < 4; ++i)
+            TF6[i] = fw6 * FE15_C0_F_Q3[facet][iq][i];
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j)
+                BF6[i][j] += TF6[i] * FE15_C0_F_Q3[facet][iq][j];
+        const double fw7 = sv3[20] * weights3[iq];
+        alignas(32) double TF7[4];
+        for (int i = 0; i < 4; ++i)
+            TF7[i] = fw7 * FE15_C0_F_Q3[facet][iq][i];
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j)
+                BF7[i][j] += TF7[i] * FE15_C0_F_Q3[facet][iq][j];
+        const double fw8 = sv3[21] * weights3[iq];
+        alignas(32) double TF8[4];
+        for (int i = 0; i < 4; ++i)
+            TF8[i] = fw8 * FE15_C0_F_Q3[facet][iq][i];
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j)
+                BF8[i][j] += TF8[i] * FE15_C0_F_Q3[facet][iq][j];
+    }
+    std::fill(A, A + 144, 0.0);
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            A[12 * i + j] += BF0[i][j];
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            A[12 * i + (j + 4)] += BF1[i][j];
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            A[12 * i + (j + 8)] += BF2[i][j];
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            A[12 * (i + 4) + j] += BF3[i][j];
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            A[12 * (i + 4) + (j + 4)] += BF4[i][j];
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            A[12 * (i + 4) + (j + 8)] += BF5[i][j];
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            A[12 * (i + 8) + j] += BF6[i][j];
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            A[12 * (i + 8) + (j + 4)] += BF7[i][j];
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            A[12 * (i + 8) + (j + 8)] += BF8[i][j];
+  }
+
+};
+
+
 class navierstokes3d_force_cell_integral_1_otherwise: public ufc::cell_integral
 {
 public:
@@ -6242,7 +6563,7 @@ public:
 
   const char * signature() const final override
   {
-    return "6b0d3c29c2c2747ac781ceaf4a9ad37c9deedbdc6dd7d2b240f1cfd8c5e76e296a6ded6d0a664ca7fceb270e73d051d8134375e8135deed8a384cb0697b877d0";
+    return "3a6d28e742d40080cc39b0854f74bca98cb3ebc276788043eb4bedb4c484c5435f32bca898bc7de6f71852cbdf3463bfaae63d7de24169d9ac19e015d170e8ee";
   }
 
   std::size_t rank() const final override
@@ -6252,16 +6573,16 @@ public:
 
   std::size_t num_coefficients() const final override
   {
-    return 5;
+    return 6;
   }
 
   std::size_t original_coefficient_position(std::size_t i) const final override
   {
-    if (i >= 5)
+    if (i >= 6)
     {
         throw std::runtime_error("Invalid original coefficient index.");
     }
-    static const std::vector<std::size_t> position = {0, 1, 2, 3, 4};
+    static const std::vector<std::size_t> position = {0, 1, 2, 3, 4, 5};
     return position[i];
   }
 
@@ -6298,6 +6619,8 @@ public:
         return new navierstokes3d_force_finite_element_2();
     case 6:
         return new navierstokes3d_force_finite_element_2();
+    case 7:
+        return new navierstokes3d_force_finite_element_2();
     default:
         return nullptr;
     }
@@ -6320,6 +6643,8 @@ public:
     case 5:
         return new navierstokes3d_force_dofmap_2();
     case 6:
+        return new navierstokes3d_force_dofmap_2();
+    case 7:
         return new navierstokes3d_force_dofmap_2();
     default:
         return nullptr;
@@ -6373,7 +6698,7 @@ public:
 
   bool has_exterior_facet_integrals() const final override
   {
-    return false;
+    return true;
   }
 
   bool has_interior_facet_integrals() const final override
@@ -6453,7 +6778,7 @@ public:
 
   ufc::exterior_facet_integral * create_default_exterior_facet_integral() const final override
   {
-    return nullptr;
+    return new navierstokes3d_force_exterior_facet_integral_0_otherwise();
   }
 
   ufc::interior_facet_integral * create_default_interior_facet_integral() const final override
@@ -6767,13 +7092,14 @@ class BilinearForm : public dolfin::BilinearForm
 {
 public:
 
-  BilinearForm(dolfin::Mesh& mesh, dolfin::Coefficient& w0, dolfin::Coefficient& w1, dolfin::Coefficient& w2, dolfin::Coefficient& w3, dolfin::Coefficient& w4) : dolfin::BilinearForm(mesh)
+  BilinearForm(dolfin::Mesh& mesh, dolfin::Coefficient& w0, dolfin::Coefficient& w1, dolfin::Coefficient& w2, dolfin::Coefficient& w3, dolfin::Coefficient& w4, dolfin::Coefficient& w5) : dolfin::BilinearForm(mesh)
   {
     coefficients_.push_back(&w0);
     coefficients_.push_back(&w1);
     coefficients_.push_back(&w2);
     coefficients_.push_back(&w3);
     coefficients_.push_back(&w4);
+    coefficients_.push_back(&w5);
     Form::init(coefficients_);
   }
 
@@ -6809,6 +7135,8 @@ public:
       return "d2";
     case 4:
       return "k";
+    case 5:
+      return "beta";
     }
 
     dolfin::error("Generated code for class Form: accessing coefficient data."

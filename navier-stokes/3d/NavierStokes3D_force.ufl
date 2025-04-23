@@ -7,6 +7,9 @@
 # The bilinear form for the incompressible Navier-Stokes equations
 # Compile this form with FFC: ffc -l dolfin_hpc NavierStokes3D.ufl.
 
+# Needed for Nitsche boundary condition
+import ufl
+
 cell = "tetrahedron"
 
 K1 = VectorElement("Lagrange", cell, 1)
@@ -29,7 +32,21 @@ d1 = Coefficient(K3)
 d2 = Coefficient(K3)
 k = Coefficient(K3)
 
+beta = Coefficient(K3) # Penalty parameter for the Nitsche condition
+
 ff = as_vector([32*nu for i in range(d)]); # Source function. Scalar for now, what should it be?
+
+# Get mesh coordinates and facet normals
+x = ufl.SpatialCoordinate(v.ufl_domain())
+n = ufl.FacetNormal(v.ufl_domain())
+
+# xmin and xmax to define inflow and outflow boundaries where Nitsche should not be applied
+xmin = 0.0
+xmax = 2.1
+DOLFIN_EPS = 1e-6
+
+# Phase function, true for all boundaries except inflow and outflow
+apply_nitsche = conditional(And(ge(x[0], xmin + DOLFIN_EPS), le(x[0], xmax - DOLFIN_EPS)), 1.0, 0.0)
 
 def ugradu(u, v):
     return as_vector([dot(u, grad(v[i])) for i in range(d)])
@@ -56,5 +73,5 @@ def dFdu(u, k, v):
     uc = 0.5*u
     return (-inner(u, v) + k*dfdu(uc, v))
 
-a = (dFdu(U, k, v)) * dx
+a = (dFdu(U, k, v)) * dx + (apply_nitsche * beta * dot(U, n)*dot(v,n)) * ds
 L = (dFdu(UP, k, v) - F(UP, U0, k, v)) * dx

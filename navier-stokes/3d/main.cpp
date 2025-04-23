@@ -1080,8 +1080,8 @@ int main(int argc, char* argv[])
   //  bc_mom.push_back(&cylinder_no_slip);
   //  bc_mom.push_back(&inflow_mom_bc_poiseuille); // For Poiseuille flow test
   //  bc_mom.push_back(&cylinder_slip_bc);
-  bc_mom.push_back(&horizontal_slip_bc);
-  bc_mom.push_back(&vertical_slip_bc);
+//  bc_mom.push_back(&horizontal_slip_bc);
+//  bc_mom.push_back(&vertical_slip_bc);
   //  bc_mom.push_back(&cylinder_no_slip);
   //  bc_mom.push_back(&cylinder_slip_bc);
   //  bc_mom.push_back(&slip_bc);
@@ -1098,11 +1098,12 @@ int main(int argc, char* argv[])
   //  bc_murtazo.push_back(&murtazo_slip_bc);
   //  bc_murtazo.push_back(&murtazo_slip_bc_horizontal);
   //  bc_murtazo.push_back(&murtazo_slip_bc_vertical);
-  bc_murtazo.push_back(&murtazo_slip_bc_cylinder);
+//  bc_murtazo.push_back(&murtazo_slip_bc_cylinder);
 
   // Set up functions
   Constant dt(tstep);
   Constant nu(viscosity);
+  Constant beta(10.0);
   //  Analytic<InitialPressure> d1(mesh); // Stabilization parameter
   //  Analytic<InitialPressure> d2(mesh); // Stabilization parameter
   Function d1(mesh);
@@ -1115,7 +1116,7 @@ int main(int argc, char* argv[])
   //  Analytic<InitialPressure> p0(mesh); // Is this needed or used? How else to set initial pressure?
 
   // Create forms
-  NavierStokes3D_force::BilinearForm a_mom(mesh, up, nu, d1, d2, dt);
+  NavierStokes3D_force::BilinearForm a_mom(mesh, up, nu, d1, d2, dt, beta);
   NavierStokesContinuity3D::BilinearForm a_con(mesh, d1);
   Function u(a_mom.trial_space());
   //  InitialVelocityFunction u_initial(a_mom.trial_space());
@@ -1470,7 +1471,7 @@ int main(int argc, char* argv[])
         residual2 = sqrt(sqr(residual_mom.norm()) + sqr(residual_con.norm()));
 
         // Trying Murtazo after residual2. Au-b will never converge if doing this before calculating it
-        murtazo_slip_bc.apply(A_mom, u.vector(), a_mom); // Does this work? Applying with u instead of b should be enough?
+//        murtazo_slip_bc.apply(A_mom, u.vector(), a_mom); // Does this work? Applying with u instead of b should be enough?
         u.sync();
 
         // Compute more residuals
