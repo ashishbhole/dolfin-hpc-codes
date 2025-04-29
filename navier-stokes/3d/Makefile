@@ -21,7 +21,7 @@ run:
 	(cd ${DIR} && sbatch submit.sh)
 
 clean:
-	-rm -f *.o core *.core $(OBJECTS) $(DEST) *.log *.vtu *.pvtu *.pvd
+	-rm -f *.o core *.core $(OBJECTS) $(DEST) *.log *.vtu *.pvtu *.pvd solution*
 
 $(DEST): $(OBJECTS)
 	$(CXX) -o $@ $(OBJECTS) $(CFLAGS) $(LIBS)

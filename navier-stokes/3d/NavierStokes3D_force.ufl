@@ -33,20 +33,28 @@ d2 = Coefficient(K3)
 k = Coefficient(K3)
 
 beta = Coefficient(K3) # Penalty parameter for the Nitsche condition
+n = Coefficient(K)
+
 
 ff = as_vector([32*nu for i in range(d)]); # Source function. Scalar for now, what should it be?
 
 # Get mesh coordinates and facet normals
 x = ufl.SpatialCoordinate(v.ufl_domain())
-n = ufl.FacetNormal(v.ufl_domain())
+#n = ufl.FacetNormal(v.ufl_domain())
 
 # xmin and xmax to define inflow and outflow boundaries where Nitsche should not be applied
 xmin = 0.0
 xmax = 2.1
+zmin = 0.0;
+zmax = 0.4;
+xcenter = 0.5
+ycenter = 0.7
+radius = 0.05
 DOLFIN_EPS = 1e-6
 
 # Phase function, true for all boundaries except inflow and outflow
-apply_nitsche = conditional(And(ge(x[0], xmin + DOLFIN_EPS), le(x[0], xmax - DOLFIN_EPS)), 1.0, 0.0)
+# apply_nitsche = conditional(And(ge(x[0], xmin + DOLFIN_EPS), le(x[0], xmax - DOLFIN_EPS)), 1.0, 0.0)
+apply_nitsche = conditional(And(And(((x[0] - xcenter)*(x[0] - xcenter) + (x[1] - ycenter)*(x[1] - ycenter)) - DOLFIN_EPS < (radius * radius), x[2] < zmax - DOLFIN_EPS), x[2] > zmin + DOLFIN_EPS), 1.0, 0.0)
 
 def ugradu(u, v):
     return as_vector([dot(u, grad(v[i])) for i in range(d)])

@@ -29,7 +29,7 @@ using namespace dolfin;
 
 real bmarg = 1.0e-3 + DOLFIN_EPS;
 
-real Tfinal = 0.05;
+real Tfinal = 0.05*100;
 real ubar = 1.0; // Free stream velocity
 real ubar_max = 1.0;
 
@@ -126,9 +126,10 @@ class CylinderSlipBoundary : public SubDomain
   public:
     bool inside(const real* p, bool on_boundary) const
     {
+//      if(((p[0] - xcenter)*(p[0] - xcenter) + (p[1] - ycenter)*(p[1] - ycenter)) - bmarg < (radius * radius) && p[2] < zmax - bmarg && p[2] > zmin + bmarg)
       //    return //on_boundary &&
       if(((p[0] - xcenter)*(p[0] - xcenter) + (p[1] - ycenter)*(p[1] - ycenter)) - bmarg < (radius * radius)) // All of the cylinder, including on the walls
-                                                                                                              //           (p[0] < xmax - bmarg && p[0] > xmin + bmarg) && (p[1] < ymax - bmarg && p[1] > ymin + bmarg) && (p[2] < zmax - bmarg && p[2] > zmin + bmarg);
+//           (p[0] < xmax - bmarg && p[0] > xmin + bmarg) && (p[1] < ymax - bmarg && p[1] > ymin + bmarg) && (p[2] < zmax - bmarg && p[2] > zmin + bmarg);
       {
         //      std::cout << p[0] << ", " << p[1] << ", " <<p[2] << ", " << std::endl;
         return true;
@@ -911,24 +912,8 @@ void ComputeVolInv(Mesh& mesh, Function& vol_inv)
 }
 
 // Triple decomposition
-void computeTripleDecomposition(Mesh& mesh, Gradient::BilinearForm& aGrad, Gradient::LinearForm& LGrad, Function& u, Function& vol_inv, Function& triple_shear, Function& triple_strain, Function& triple_rotation)
+void computeTripleDecomposition(Mesh& mesh, Gradient::BilinearForm& aGrad, Gradient::LinearForm& LGrad, Function& u, Function& triple_shear, Function& triple_strain, Function& triple_rotation)
 {
-  // Compute cellwise inverse volume. This only needs to be done once, so we should move this outside
-  //  Function vol_inv(mesh);
-  //  ComputeVolInv(mesh, vol_inv);
-
-  // Assembling L=inner(grad(u),v) outputs grad(u) directly, no need to solve anything. LGrad also only needs to be created once
-  /*  Gradient::BilinearForm aGrad(mesh);
-      Gradient::LinearForm LGrad(mesh, u, vol_inv);
-
-  // Initialize functions with the appropriate FE space
-  vol_inv.init(aGrad.create_coefficient_space("icv"));
-  triple_shear.init(aGrad.create_coefficient_space("icv"));
-  triple_strain.init(aGrad.create_coefficient_space("icv"));
-  triple_rotation.init(aGrad.create_coefficient_space("icv"));
-
-  ComputeVolInv(mesh, vol_inv);
-   */
   Vector gradU;
   LGrad.assemble(gradU, false);
   gradU.apply();
@@ -973,7 +958,7 @@ void computeTripleDecomposition(Mesh& mesh, Gradient::BilinearForm& aGrad, Gradi
   delete[] gradU_block;
 }
 
-void project_DG0_to_CG1(Mesh mesh, Function DG0_function, Function CG1_function, bool reset_matrix)
+void project_DG0_to_CG1(Mesh mesh, Function DG0_function, Function CG1_function)
 {
   KrylovSolver solver;
 
@@ -983,9 +968,9 @@ void project_DG0_to_CG1(Mesh mesh, Function DG0_function, Function CG1_function,
   PETScMatrix A;
   Vector b;
 
-  a.assemble(A, reset_matrix);
-  L.assemble(b, reset_matrix);
-
+  a.assemble(A, true);
+  L.assemble(b, true);
+  
   solver.solve(A, CG1_function.vector(), b);
 }
 
@@ -1067,6 +1052,8 @@ int main(int argc, char* argv[])
   DirichletBC vertical_slip_bc(continuity_outflow, mesh, vertical_slip_boundary, subsystem_z);
   //  DirichletBC slip_bc(dirichlet_slip, mesh, slip_boundary); // TODO: testing dirichlet slip
   DirichletBC no_slip_bc(zero_velocity, mesh, slip_boundary); // no-slip everywhere
+  DirichletBC no_slip_horizontal(zero_velocity, mesh, horizontal_slip_boundary); // no-slip everywhere
+  DirichletBC no_slip_vertical(zero_velocity, mesh, vertical_slip_boundary); // no-slip everywhere
   DirichletBC cylinder_no_slip(zero_velocity, mesh, cylinder_slip_boundary);
   DirichletBC outflow_con_bc(continuity_outflow, mesh, outflow_boundary);
   DirichletBC inflow_con_bc(continuity_outflow, mesh, inflow_boundary); //TODO: p=0 on inflow, test this next
@@ -1084,8 +1071,10 @@ int main(int argc, char* argv[])
   //  bc_mom.push_back(&cylinder_no_slip);
   //  bc_mom.push_back(&inflow_mom_bc_poiseuille); // For Poiseuille flow test
   //  bc_mom.push_back(&cylinder_slip_bc);
-//  bc_mom.push_back(&horizontal_slip_bc);
-//  bc_mom.push_back(&vertical_slip_bc);
+  bc_mom.push_back(&horizontal_slip_bc);
+  bc_mom.push_back(&vertical_slip_bc);
+//  bc_mom.push_back(&no_slip_horizontal);
+//  bc_mom.push_back(&no_slip_vertical);
   //  bc_mom.push_back(&cylinder_no_slip);
   //  bc_mom.push_back(&cylinder_slip_bc);
   //  bc_mom.push_back(&slip_bc);
@@ -1107,7 +1096,7 @@ int main(int argc, char* argv[])
   // Set up functions
   Constant dt(tstep);
   Constant nu(viscosity);
-  Constant beta(10.0);
+  Constant beta(0.0);
   //  Analytic<InitialPressure> d1(mesh); // Stabilization parameter
   //  Analytic<InitialPressure> d2(mesh); // Stabilization parameter
   Function d1(mesh);
@@ -1120,7 +1109,7 @@ int main(int argc, char* argv[])
   //  Analytic<InitialPressure> p0(mesh); // Is this needed or used? How else to set initial pressure?
 
   // Create forms
-  NavierStokes3D_force::BilinearForm a_mom(mesh, up, nu, d1, d2, dt, beta);
+  NavierStokes3D_force::BilinearForm a_mom(mesh, up, nu, d1, d2, dt, beta, cylinder_node_normal.basis()[0]);
   NavierStokesContinuity3D::BilinearForm a_con(mesh, d1);
   Function u(a_mom.trial_space());
   //  InitialVelocityFunction u_initial(a_mom.trial_space());
@@ -1261,12 +1250,6 @@ int main(int argc, char* argv[])
 
   // Output files
   File solutionfile("solution.bin");
-  File u_file("output_u.bin");
-  File p_file("output_p.bin");
-  File normals_file("output_normals.bin");
-  File shear_file("output_shear.bin");
-  File strain_file("output_strain.bin");
-  File rotation_file("output_rotation.bin");
   //  std::vector<std::pair<Function*, std::string> > output;
   LabelList<Function> output;
   //  std::pair<Function*, std::string> u_output(&u, "Velocity");
@@ -1295,12 +1278,6 @@ int main(int argc, char* argv[])
   //  u_file << u0; //u0;
   //  p_file << sub_node_normal.basis()[0]; //horizontal_node_normal.basis()[0]; //p0;
   solutionfile << output;
-  u_file << u_output;
-  p_file << p_output;
-  normals_file << n_output;
-  shear_file << sh_output;
-  strain_file << el_output;
-  rotation_file << rr_output;
 #endif
 
   // HeartSolver/Dolfin 0.8 assembling
@@ -1487,7 +1464,7 @@ int main(int argc, char* argv[])
         residual2 = sqrt(sqr(residual_mom.norm()) + sqr(residual_con.norm()));
 
         // Trying Murtazo after residual2. Au-b will never converge if doing this before calculating it
-//        murtazo_slip_bc.apply(A_mom, u.vector(), a_mom); // Does this work? Applying with u instead of b should be enough?
+        murtazo_slip_bc.apply(A_mom, u.vector(), a_mom); // Does this work? Applying with u instead of b should be enough?
         u.sync();
 
         // Compute more residuals
@@ -1539,19 +1516,13 @@ int main(int argc, char* argv[])
       if(step < 100 || std::floor(10*t) > std::floor(10*(t-tstep))) // Print the 100 first timesteps, then ten times per simulated second
       {
         // Compute triple decomposition
-        computeTripleDecomposition(mesh, aGrad, LGrad, u, vol_inv, triple_shear, triple_strain, triple_rotation);
+        computeTripleDecomposition(mesh, aGrad, LGrad, u, triple_shear, triple_strain, triple_rotation);
 
-        project_DG0_to_CG1(mesh, triple_shear, shear_linear, step == 1);
-        project_DG0_to_CG1(mesh, triple_strain, strain_linear, step == 1);
-        project_DG0_to_CG1(mesh, triple_rotation, rotation_linear, step == 1);
+        project_DG0_to_CG1(mesh, triple_shear, shear_linear);
+        project_DG0_to_CG1(mesh, triple_strain, strain_linear);
+        project_DG0_to_CG1(mesh, triple_rotation, rotation_linear);
 
         solutionfile << output;
-        u_file << u_output;
-        p_file << p_output;
-        normals_file << n_output;
-        shear_file << sh_output;
-        strain_file << el_output;
-        rotation_file << rr_output;
       }
 #endif
       message("------------------------------------ Step %d finished ------------------------------------", step);
