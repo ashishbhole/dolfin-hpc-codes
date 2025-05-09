@@ -12,14 +12,13 @@ all: $(DEST)
 install:
 	cp demo ${DIR}
 	cp submit.sh ${DIR}
-	cp long_refined.bin ${DIR}
-	cp rectangle.bin ${DIR}
+	cp box_mesh.bin ${DIR}
 
 run:
 	(cd ${DIR} && sbatch submit.sh)
 
 clean:
-	-rm -f *.o core *.core $(OBJECTS) $(DEST) *.log *.vtu *.pvtu *.pvd
+	-rm -f *.o core *.core $(OBJECTS) $(DEST) *.log *.vtu *.pvtu *.pvd solution*
 
 $(DEST): $(OBJECTS)
 	$(CXX) -o $@ $(OBJECTS) $(CFLAGS) $(LIBS)

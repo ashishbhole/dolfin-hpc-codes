@@ -18,6 +18,7 @@
 #include "NavierStokes3D.h"
 #include "NavierStokesContinuity3D.h"
 #include "Gradient.h"
+#include "Gradient_components.h"
 #include "Residual.h"
 
 #include <cmath> // For sin, cos and pi
@@ -29,9 +30,11 @@ using namespace dolfin;
 
 real bmarg = 1.0e-3 + DOLFIN_EPS;
 
-real Tfinal = 10000.0;
+real Tfinal = 20.0;
 real ubar = 1.0; // Free stream velocity
 real ubar_max = 1.0;
+
+real vortex_diameter = 1.0;
 
 real viscosity = 0.0; // Could just remove the term in the form file instead
 
@@ -42,11 +45,11 @@ real ymax = 1.0;
 real zmin = 0.0;
 real zmax = 1.0;*/
 real xmin = 0.0;
-real xmax = 5.0;
-real ymin = -5.0;
-real ymax = 5.0;
-real zmin = -10.0;
-real zmax = 10.0;
+real xmax = 3.0;
+real ymin = -2.0;
+real ymax = 2.0;
+real zmin = -2.0;
+real zmax = 2.0;
 
 // Sub domain for vortex sides
 class VortexBoundary : public SubDomain
@@ -60,13 +63,13 @@ public:
   }
 };
 
-// Hacky subdomain for setting initial condition on the entire domain
-class WholeDomain : public SubDomain
+// Subdomain for setting initial condition
+class VortexDomain : public SubDomain
 {
 public:
   bool inside(const real* p, bool on_boundary) const
   {
-    return true;
+    return(std::abs(p[1]) <= vortex_diameter/2 && std::abs(p[2]) <= vortex_diameter);
   }
 };
 
@@ -91,19 +94,43 @@ public:
   }
 };
 
-// Boundary condition for inducing a vortex. Can be used in the whole domain as initial condition
+// Subdomain for the horizontal slip boundaries
+class XY_Plane : public SubDomain
+{
+  public:
+    bool inside(const real* p, bool on_boundary) const
+    {
+      return on_boundary && (p[2] > zmax - bmarg || p[2] < zmin + bmarg);
+    }
+};
+
+// Subdomain for the vertical slip boundaries
+class XZ_Plane : public SubDomain
+{
+  public:
+    bool inside(const real* p, bool on_boundary) const
+    {
+      return on_boundary && (p[1] > ymax - bmarg || p[1] < ymin + bmarg);
+    }
+};
+
+// Subdomain for the vertical slip boundaries
+class YZ_Plane : public SubDomain
+{
+  public:
+    bool inside(const real* p, bool on_boundary) const
+    {
+      return on_boundary && (p[0] > xmax - bmarg || p[0] < xmin + bmarg);
+    }
+};
+
+// Boundary condition for inducing Taylor-Green vortices. Can be use on internal points too as initial condition
 struct BC_Momentum : public Value<BC_Momentum, 3>
 {
   void eval(real* value, const real* x) const
   {
-    if(x[1] > -0.5 - bmarg && x[1] < 0.5 + bmarg && x[2] > -1.0 - bmarg && x[2] < 1.0 + bmarg)
-    {
-      value[0] = 0.0;
-//      value[1] = std::sin((x[2] - zmax / 4) * 2 * M_PI) * std::cos((x[1] - ymax / 2) * M_PI);
-//      value[2] = -std::cos((x[2] - zmax / 4) * 2 * M_PI) * std::sin((x[1] - ymax / 2) * M_PI);
-      value[1] = std::sin((x[2] - 0.5) * M_PI) * std::cos((x[1]) * M_PI);
-      value[2] = -std::cos((x[2] - 0.5) * M_PI) * std::sin((x[1]) * M_PI);
-    }
+    value[1] = std::sin((x[2] - vortex_diameter/2) * M_PI / vortex_diameter) * std::cos((x[1]) * M_PI / vortex_diameter);
+    value[2] = -std::cos((x[2] - vortex_diameter/2) * M_PI / vortex_diameter) * std::sin((x[1]) * M_PI / vortex_diameter);
   }
 };
 
@@ -362,7 +389,8 @@ void tripleDecomposition(real*& grad_u, real* shear, real* strain, real* rotatio
   dgees_(&jobvs, &sort, tripleSelectFunction, &n, grad_u, &n, &sdim,
     wr.data(), wi.data(), vs.data(), &n, work.data(), &lwork, bwork.data(), &info);
 
-  if(dolfin::MPI::rank() == 64 && grad_u[0] > bmarg || grad_u[1] > bmarg || grad_u[2] > bmarg || grad_u[3] > bmarg || grad_u[4] > bmarg || grad_u[5] > bmarg || grad_u[6] > bmarg || grad_u[7] > bmarg || grad_u[8] > bmarg)
+  if(false)
+//  if(dolfin::MPI::rank() == 64 && grad_u[0] > bmarg || grad_u[1] > bmarg || grad_u[2] > bmarg || grad_u[3] > bmarg || grad_u[4] > bmarg || grad_u[5] > bmarg || grad_u[6] > bmarg || grad_u[7] > bmarg || grad_u[8] > bmarg)
   {
     std::cout << grad_u[0] << ", " << grad_u[1] << ", " << grad_u[2] << std::endl
               << grad_u[3] << ", " << grad_u[4] << ", " << grad_u[5] << std::endl
@@ -405,7 +433,7 @@ void computeTripleDecomposition(Mesh& mesh, Gradient::BilinearForm& aGrad, Gradi
   Cell c(mesh, 0);
   uint local_dim = c.num_entities(0);
   size_t *idx  = new size_t[d * local_dim];
-  real *gradU_block = new real[d * local_dim];
+  real *gradU_block = new real[d * d];
   size_t global_index;
   real shear, strain, rotation;
   // Triple decomposition is computed on cell level
@@ -446,8 +474,11 @@ int main(int argc, char* argv[])
   dolfin_set("NodeNormal dump types", true);
 
   // Read mesh
-//  Mesh mesh("long_refined.bin");
-  Mesh mesh("rectangle.bin");
+  Mesh mesh("box_mesh.bin");
+
+  // Print the mesh to new file, needed for dolfin-post
+  File meshfile("meshfile.bin");
+  meshfile << mesh;
 
   // Set time step (proportional to the minimum cell diameter) 
   real hmin = 1.0e6;
@@ -465,28 +496,41 @@ int main(int argc, char* argv[])
 
   // Set boundary conditions
   Analytic<ZeroVelocity> zero_velocity(mesh);
-  Analytic<BC_Continuity> continuity_wall(mesh);
+  Analytic<BC_Continuity> zero_1d(mesh);
   Analytic<BC_Momentum> boundary_vortex(mesh);
-  VortexBoundary vortex_boundary;
-  WholeDomain whole_domain;
+  
+  // Define boundaries
+  VortexBoundary vortex_boundary; // Only boundary
+  VortexDomain vortex_domain; // Internal points too
   WallBoundary wall_boundary;
   AllWalls all_walls_boundary;
+  XY_Plane xy_plane;
+  XZ_Plane xz_plane;
+  YZ_Plane yz_plane;
 
-  DirichletBC wall_con_bc(continuity_wall, mesh, wall_boundary); // 0 pressure on the no-slip walls
-  DirichletBC no_slip_bc(zero_velocity, mesh, wall_boundary); // no-slip everywhere
-  DirichletBC vortex_mom_bc(boundary_vortex, mesh, vortex_boundary); // vortices on the sides
-  SlipBC slip_bc(mesh, all_walls_boundary); // Slip on all walls
+  // SlipBC sometimes crashes when running on too many cores. Instead, use SubSystem to set u=0 in specific directions
+  SubSystem subsystem_x(0);
+  SubSystem subsystem_y(1);
+  SubSystem subsystem_z(2);
+
+  // Pressure condition: p=0 on all walls
+  DirichletBC wall_con_bc(zero_1d, mesh, wall_boundary);
+  // Momentum condition: u=0 in the normal direction
+  DirichletBC xy_slip_bc(zero_1d, mesh, xy_plane, subsystem_z);
+  DirichletBC xz_slip_bc(zero_1d, mesh, xz_plane, subsystem_y);
+  DirichletBC yz_slip_bc(zero_1d, mesh, yz_plane, subsystem_x);
+
 
   // Put the boundary conditions in vectors
   std::vector<BoundaryCondition*> bc_con;
   bc_con.push_back(&wall_con_bc);
   std::vector<BoundaryCondition*> bc_mom;
-//  bc_mom.push_back(&vortex_mom_bc);
-//  bc_mom.push_back(&no_slip_bc);
-  bc_mom.push_back(&slip_bc);
+  bc_mom.push_back(&xy_slip_bc);
+  bc_mom.push_back(&xz_slip_bc);
+  bc_mom.push_back(&yz_slip_bc);
 
-  // Initial velocity for whole domain
-  DirichletBC vortex_initial(boundary_vortex, mesh, whole_domain);
+  // Initial velocity for whole domain. Defined as a DirichletBC, but applied to internal points too
+  DirichletBC vortex_initial(boundary_vortex, mesh, vortex_domain);
 
 
   // Set up functions. Not sure what should be Constant or Function
@@ -500,8 +544,6 @@ int main(int argc, char* argv[])
   NavierStokes3D::BilinearForm a_mom(mesh, up, nu, d1, d2, dt);
   NavierStokesContinuity3D::BilinearForm a_con(mesh, d1);
   Function u(a_mom.trial_space());
-//  InitialVelocityFunction u_initial(a_mom.trial_space());
-//  u = u_initial;
   Function u0(a_mom.trial_space());
   Function p(a_con.trial_space());
   Function p0(a_con.trial_space());
@@ -650,7 +692,8 @@ int main(int argc, char* argv[])
       if(step == 0)
       {
         // Set initial condition. This is easier than initial conditions the normal way
-        vortex_initial.apply(A_mom, b_mom, a_mom);
+        vortex_initial.apply(A_mom, u.vector(), a_mom);
+        break;
       }
       else
       {
@@ -702,7 +745,26 @@ int main(int argc, char* argv[])
     } // Fix-point iteration for non-linear problem closed
 
     // Compute triple decomposition
-    computeTripleDecomposition(mesh, aGrad, LGrad, u, triple_shear, triple_strain, triple_rotation);
+//    computeTripleDecomposition(mesh, aGrad, LGrad, u, triple_shear, triple_strain, triple_rotation);
+
+    // Gradient testing
+    Gradient_components::BilinearForm aGrad_x(mesh);
+    Gradient_components::LinearForm LGrad_x(mesh, *(u.decompose()[0]), vol_inv);
+    Gradient_components::LinearForm LGrad_y(mesh, *(u.decompose()[1]), vol_inv);
+    Gradient_components::LinearForm LGrad_z(mesh, *(u.decompose()[2]), vol_inv);
+    Function gradU_x(aGrad_x.trial_space());
+    Function gradU_y(aGrad_x.trial_space());
+    Function gradU_z(aGrad_x.trial_space());
+    LGrad_x.assemble(gradU_x.vector(), false);
+    LGrad_y.assemble(gradU_y.vector(), false);
+    LGrad_z.assemble(gradU_z.vector(), false);
+    File grad_x_file("gradient_x.pvd");
+    File grad_y_file("gradient_y.pvd");
+    File grad_z_file("gradient_z.pvd");
+    grad_x_file << gradU_x;
+    grad_y_file << gradU_y;
+    grad_z_file << gradU_z;
+
 
     // Compute residual
     LRes.assemble(residual_function.vector(), false); // false means reassemble, which we always want?

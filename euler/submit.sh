@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH -A naiss2024-5-25
+#SBATCH -A naiss2025-5-152
 #SBATCH -J cylinder
 #SBATCH -t 06:00:00
 #SBATCH -N 1
