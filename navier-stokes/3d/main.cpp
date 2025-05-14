@@ -18,6 +18,8 @@
 #include "NavierStokes3D_force.h"
 #include "NavierStokesContinuity3D.h"
 #include "Gradient.h"
+#include "Gradientcomponents.h"
+#include "Gradient_z.h"
 #include "Residual.h"
 #include "Project_DG0_to_CG1.h"
 
@@ -888,7 +890,7 @@ void tripleDecomposition(real*& grad_u, real* shear, real* strain, real* rotatio
   dgees_(&jobvs, &sort, tripleSelectFunction, &n, grad_u, &n, &sdim,
       wr.data(), wi.data(), vs.data(), &n, work.data(), &lwork, bwork.data(), &info);
 
-  // Compute sh, el, rr
+  // Compute shear, strain and rotation
   *shear = std::sqrt(std::pow(grad_u[3], 2) + std::pow(grad_u[6], 2) + std::pow(grad_u[5] + grad_u[7], 2));
   *strain = std::sqrt(std::pow(grad_u[0], 2) + std::pow(grad_u[4], 2) + std::pow(grad_u[8], 2));
   *rotation = std::sqrt(2 * std::pow(std::min(std::abs(grad_u[5]), std::abs(grad_u[7])), 2));
@@ -912,33 +914,108 @@ void ComputeVolInv(Mesh& mesh, Function& vol_inv)
 }
 
 // Triple decomposition
-void computeTripleDecomposition(Mesh& mesh, Gradient::BilinearForm& aGrad, Gradient::LinearForm& LGrad, Function& u, Function& triple_shear, Function& triple_strain, Function& triple_rotation)
+//void computeTripleDecomposition(Mesh& mesh, Gradientcomponents::BilinearForm& aGrad_x, Function& gradU_x, Function& gradU_y, Function& gradU_z, Function& triple_shear, Function& triple_strain, Function& triple_rotation)
+void computeTripleDecomposition(Mesh& mesh, Function& u, Function& vol_inv, Function& triple_shear, Function& triple_strain, Function& triple_rotation)
 {
-  Vector gradU;
-  LGrad.assemble(gradU, false);
-  gradU.apply();
+  // Compute gradient
+  // It's not necessary to reallocate all of these every time, but u.decompose doesn't automatically update when u does.
+  Gradientcomponents::BilinearForm aGrad_x(mesh);
+  Gradientcomponents::LinearForm LGrad_x(mesh, *(u.decompose()[0]), vol_inv);
+  Gradientcomponents::LinearForm LGrad_y(mesh, *(u.decompose()[1]), vol_inv);
+  Gradientcomponents::LinearForm LGrad_z(mesh, *(u.decompose()[2]), vol_inv);
+  Function gradU_x(aGrad_x.trial_space());
+  Function gradU_y(aGrad_x.trial_space());
+  Function gradU_z(aGrad_x.trial_space());
 
+  // The above works for du/dx and du/dy, below is a work-around for du/dz
+  Gradient_z::BilinearForm aGrad_ddz(mesh);
+  Gradient_z::LinearForm LGrad_dudz(mesh, *(u.decompose()[0]), vol_inv);
+  Gradient_z::LinearForm LGrad_dvdz(mesh, *(u.decompose()[1]), vol_inv);
+  Gradient_z::LinearForm LGrad_dwdz(mesh, *(u.decompose()[2]), vol_inv);
+  Function gradU_dudz(aGrad_ddz.trial_space());
+  Function gradU_dvdz(aGrad_ddz.trial_space());
+  Function gradU_dwdz(aGrad_ddz.trial_space());
+
+  // Compute velocity gradient
+  LGrad_x.assemble(gradU_x.vector(), false);
+  LGrad_y.assemble(gradU_y.vector(), false);
+  LGrad_z.assemble(gradU_z.vector(), false);
+
+  // z work-around
+  LGrad_dudz.assemble(gradU_dudz.vector(), false);
+  LGrad_dvdz.assemble(gradU_dvdz.vector(), false);
+  LGrad_dwdz.assemble(gradU_dwdz.vector(), false);
+
+  // Print the gradients to file, for debugging purposes. Can remove later
+  File grad_x_file("gradient_x.pvd");
+  File grad_y_file("gradient_y.pvd");
+  File grad_z_file("gradient_z.pvd");
+  grad_x_file << gradU_x;
+  grad_y_file << gradU_y; 
+  grad_z_file << gradU_z;
+
+  // z work-around print
+  File dudz_file("dudz.pvd");
+  File dvdz_file("dvdz.pvd");
+  File dwdz_file("dwdz.pvd");
+  dudz_file << gradU_dudz;
+  dvdz_file << gradU_dvdz;
+  dwdz_file << gradU_dwdz;
+
+
+  // Initialize required parameters
   uint d = mesh.topology().dim();
   Cell c(mesh, 0);
-  uint local_dim = c.num_entities(0);
-  size_t *idx  = new size_t[d * local_dim];
-  real *gradU_block = new real[d * local_dim];
+  size_t *idx = new size_t[d];
+  size_t idx_ddz;
+  real *row = new real[d];
+  real *gradU_block = new real[d * d];
   size_t global_index;
   real shear, strain, rotation;
+
   // Triple decomposition is computed on cell level
   for (CellIterator cell(mesh); !cell.end(); ++cell)
   { 
+    // Get UFC cell interface
     UFCCell ufc_cell(*cell);
-    (aGrad.dofmaps())[0]->tabulate_dofs(idx, ufc_cell, *cell);
-    gradU.get(gradU_block, d*d, idx);
-    if( MPI::global_size() > 1)
-    {
-      global_index = mesh.distdata()[d].get_global(cell->index());
-    }
-    else
-    {
-      global_index = cell->index();
-    }
+
+    // Get indices of the gradient components of this cell
+    (aGrad_x.dofmaps())[0]->tabulate_dofs(idx, ufc_cell, *cell);
+
+    // Get d/dx and d/dy and store them in the block
+    gradU_x.vector().get(row, d, idx);
+    gradU_block[0] = row[0];
+    gradU_block[3] = row[1];
+    gradU_y.vector().get(row, d, idx);
+    gradU_block[1] = row[0];
+    gradU_block[4] = row[1];
+    gradU_z.vector().get(row, d, idx);
+    gradU_block[2] = row[0];
+    gradU_block[5] = row[1];
+
+    // z component doesn't work in the previous form, add it component wise
+    (aGrad_ddz.dofmaps())[0]->tabulate_dofs(&idx_ddz, ufc_cell, *cell);
+    gradU_dudz.vector().get(&gradU_block[6], 1, &idx_ddz);
+    gradU_dvdz.vector().get(&gradU_block[7], 1, &idx_ddz);
+    gradU_dwdz.vector().get(&gradU_block[8], 1, &idx_ddz);
+
+    // Get global index of the cell
+    global_index = (dolfin::MPI::size() > 1 ? mesh.distdata()[d].get_global(cell->index()) : cell->index());
+
+/*      // Print debug info
+  message("----- Cell %d -----", cell->index());
+  message("Global index: %d", global_index);
+  message("DOFs per cell (d): %d", (int)d);
+  for (std::size_t i = 0; i < d; ++i)
+    message("  idx[%lu] = %d", i, idx[i]);
+
+  for (std::size_t i = 0; i < d; ++i)
+    message("  gradU_x[%lu] = %.10g", i, gradU_block[i]);
+  for (std::size_t i = 0; i < d; ++i)
+    message("  gradU_y[%lu] = %.10g", i, gradU_block[d + i]);
+  for (std::size_t i = 0; i < d; ++i)
+    message("  gradU_z[%lu] = %.10g", i, gradU_block[2*d + i]);
+*/
     // Compute the triple decomposition
     tripleDecomposition(gradU_block, &shear, &strain, &rotation);
     triple_shear.vector().set(&shear, 1, &global_index);
@@ -987,7 +1064,7 @@ void project_DG0_to_CG1(Mesh mesh, Function DG0_function, Function CG1_function)
 int main(int argc, char* argv[])
 {
   dolfin_init(argc, argv);
-  Mesh mesh("cylinder_3d_bmk.bin"); // Original coarse cylinder mesh
+  Mesh mesh("cylinder-ashish.bin"); // Made with gmsh extrude, suitable for 8 cores
   
   // Print the mesh to new file, needed for dolfin-post
   File meshfile("meshfile.bin");
@@ -1241,15 +1318,15 @@ int main(int argc, char* argv[])
   triple_shear.init(LGrad.create_coefficient_space("icv"));
   triple_strain.init(LGrad.create_coefficient_space("icv"));
   triple_rotation.init(LGrad.create_coefficient_space("icv"));
-  shear_linear.init(LGrad.create_coefficient_space("u"));
-  strain_linear.init(LGrad.create_coefficient_space("u"));
-  rotation_linear.init(LGrad.create_coefficient_space("u"));
+//  shear_linear.init(LGrad.create_coefficient_space("u"));
+//  strain_linear.init(LGrad.create_coefficient_space("u"));
+//  rotation_linear.init(LGrad.create_coefficient_space("u"));
 
   // Compute inverse of mesh cell volumes, needed to compute the triple decomposition
   ComputeVolInv(mesh, vol_inv);
 
   // Output files
-  File solutionfile("solution.bin");
+  File solutionfile("solution.pvd");
   //  std::vector<std::pair<Function*, std::string> > output;
   LabelList<Function> output;
   //  std::pair<Function*, std::string> u_output(&u, "Velocity");
@@ -1258,9 +1335,9 @@ int main(int argc, char* argv[])
   Label<Function> u_output(u, "Velocity");
   Label<Function> p_output(p, "Pressure");
   Label<Function> n_output(sub_node_normal.basis()[0], "Normals");
-  Label<Function> sh_output(shear_linear, "Shear");
-  Label<Function> el_output(strain_linear, "Strain");
-  Label<Function> rr_output(rotation_linear, "Rotation");
+  Label<Function> sh_output(triple_shear, "Shear");
+  Label<Function> el_output(triple_strain, "Strain");
+  Label<Function> rr_output(triple_rotation, "Rotation");
 //  Label<Function> res_output(residual_cell, "Residual");
   output.push_back(u_output);
   output.push_back(p_output);
@@ -1513,14 +1590,14 @@ int main(int argc, char* argv[])
 #ifdef IO
       //    if(std::floor(t) > std::floor(t-tstep)) // Only print once per simulated second
       //    if(true) // Print every timestep
-      if(step < 100 || std::floor(10*t) > std::floor(10*(t-tstep))) // Print the 100 first timesteps, then ten times per simulated second
+      if(step < 10 || std::floor(10*t) > std::floor(10*(t-tstep))) // Print the 100 first timesteps, then ten times per simulated second
       {
         // Compute triple decomposition
-        computeTripleDecomposition(mesh, aGrad, LGrad, u, triple_shear, triple_strain, triple_rotation);
+        computeTripleDecomposition(mesh, u, vol_inv, triple_shear, triple_strain, triple_rotation);
 
-        project_DG0_to_CG1(mesh, triple_shear, shear_linear);
-        project_DG0_to_CG1(mesh, triple_strain, strain_linear);
-        project_DG0_to_CG1(mesh, triple_rotation, rotation_linear);
+//        project_DG0_to_CG1(mesh, triple_shear, shear_linear);
+//        project_DG0_to_CG1(mesh, triple_strain, strain_linear);
+//        project_DG0_to_CG1(mesh, triple_rotation, rotation_linear);
 
         solutionfile << output;
       }

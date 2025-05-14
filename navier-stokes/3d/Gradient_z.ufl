@@ -1,0 +1,18 @@
+# Gradient of a scalar field. E.g. give u_x as input to get the gradient as a vector
+
+# Degree
+d = 3
+
+# Space for velocity field. Vector element on vertex level with 3 degrees of freedom, 1st order interpolation (linear over cells)
+K1 = FiniteElement("Lagrange", "tetrahedron", 1)
+# Space for inverse of cell volume. Piecewise constant on cell level (0 degree interpolation, discontinuous)
+K4 = FiniteElement("Discontinuous Lagrange", "tetrahedron", 0)
+
+v = TestFunction(K4)
+dudz = TrialFunction(K4)
+u = Coefficient(K1) # Velocity component
+
+icv = Coefficient(K4) # Inverse of cell volume. When integrating grad(u) over the cell, we also need to divide by cell volume
+
+a = (inner(dudz,v))*dx
+L = icv*inner(Dx(u, 2),v)*dx # Assembling a vector from L will give the gradient of u
