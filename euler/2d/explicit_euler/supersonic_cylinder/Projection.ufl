@@ -1,0 +1,17 @@
+# Copyright (C) 2024 Ashish Bhole.
+# Licensed under the GNU LGPL Version 2.1.
+
+dim = 2
+deg = 1
+cell = triangle
+E1 = FiniteElement("Lagrange", cell, degree=deg)
+E2 = VectorElement("Lagrange", cell, degree=deg)
+E3 = FiniteElement("Lagrange", cell, degree=deg)
+WE = MixedElement(E1, E2, E3)
+
+v = TestFunction(WE)
+u = TrialFunction(WE)
+f = Coefficient(WE)
+
+a = inner(v, u)*dx
+L = inner(v, f)*dx

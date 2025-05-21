@@ -1,0 +1,109 @@
+# Copyright (C) 2024 Ashish Bhole.
+# Licensed under the GNU LGPL Version 2.1.
+
+import numpy as np
+
+dim = 2
+deg = 1
+cell = triangle
+E1 = FiniteElement("Lagrange", cell, degree=deg)
+E2 = VectorElement("Lagrange", cell, degree=deg)
+E3 = FiniteElement("Lagrange", cell, degree=deg)
+WE = MixedElement(E1, E2, E3)
+
+n = FacetNormal(cell)
+
+(rho_, m_, E_) = TestFunctions(WE) 
+(rho,  m,  E ) = TrialFunctions(WE)
+
+rho0 = Coefficient(E1)      # Values at t_n-1
+m0   = Coefficient(E2)
+E0   = Coefficient(E3)
+
+p0   = Coefficient(E3)
+
+constant = FiniteElement("Discontinuous Lagrange", triangle, 0)
+dt    = Coefficient(constant) 
+tau_vms_rho = Coefficient(constant)
+tau_vms_m   = Coefficient(constant)
+tau_vms_E   = Coefficient(constant)
+tau_sc_rho  = Coefficient(constant)
+tau_sc_m    = Coefficient(constant)
+tau_sc_E    = Coefficient(constant)
+tau_anis_sc_rho  = Coefficient(constant)
+tau_anis_sc_m    = Coefficient(constant)
+tau_anis_sc_E    = Coefficient(constant)
+
+h = Circumradius(cell)
+
+gamma = 1.4
+m2 = (m0[0]*m0[0]+m0[1]*m0[1])
+r0_pos = conditional(gt(rho0, 0.0), rho0, 1e-6)
+r2 = r0_pos * r0_pos
+
+# pressure
+p0  = (gamma-1)*E0 - 0.5*m2/r0_pos
+p0_pos = conditional(gt(p0, 0.0), p0, 1e-6)
+
+L_rho = div(m0)
+L_m   = div(outer(m0, m0/r0_pos) + p0*Identity(dim)) 
+L_E   = div((E0+p0)*m0/r0_pos)
+
+# shock-capturing
+fp  = sqrt(Dx(p0, 0)*Dx(p0, 0) + Dx(p0, 1)*Dx(p0, 1)) / p0_pos
+dp_drho = - 0.5 * m2 / r2
+dp_dm   = - 0.5 * m0 / r0_pos
+dp_dE   = (gamma-1)
+dp  = dp_drho * L_rho + dp_dE * L_E + inner(dp_dm, L_m)
+tau = abs(dp) * fp / p0_pos
+
+anis_dir = grad(p0)/sqrt(Dx(p0, 0)*Dx(p0, 0) + Dx(p0, 1)*Dx(p0, 1))
+
+# VMS
+LT_rho_1 = 0
+LT_rho_2 = grad(rho_)
+LT_rho_3 = 0
+
+LT_m_1 = -m2/(r2) * div(m_) - inner(m0, dot(m0, grad(m_))) / r0_pos
+LT_m_2 = 2.0 * dot(m0, grad(m_)) / r0_pos + dot(m0, grad(m_)) / r0_pos # check
+LT_m_3 = (gamma - 1.0) * div(m_)
+
+LT_E_1 = (m2/(r2*r0_pos) - gamma*E0/r2) * inner(m0, grad(E_))
+LT_E_2 = - m0 * inner(m0, grad(E_)) / rho0 + (E0+p0) * grad(E_) / r0_pos
+LT_E_3 = gamma * inner(m0, grad(E_))
+
+# weak form
+res_fe = rho_*rho*dx    - rho_*rho0*dx    - dt*inner(grad(rho_), m0)*dx \
+       + dt*rho_*inner(m0, n)*ds(1)  \
+       + dt*rho_*inner(m0, n)*ds(2)  \
+       + inner(m_,m)*dx - inner(m_,m0)*dx - dt*inner(grad(m_), outer(m0, m0/r0_pos))*dx \
+       - dt*inner(grad(m_), p0*Identity(dim))*dx \
+       + dt*inner(m_, inner(m0, n)*m0/r0_pos)*ds(1) \
+       + dt*inner(m_, inner(m0, n)*m0/r0_pos)*ds(2) \
+       + dt*inner(m_, p0*n)*ds(0) \
+       + dt*inner(m_, p0*n)*ds(1) \
+       + dt*inner(m_, p0*n)*ds(2) \
+       + inner(E_,E)*dx - inner(E_,E0)*dx - dt*inner(grad(E_), (E0+p0)*m0/r0_pos)*dx \
+       + dt*E_*inner((E0+p0)*m0/r0_pos, n)*ds(1) \
+       + dt*E_*inner((E0+p0)*m0/r0_pos, n)*ds(2)
+
+res_vms = inner(LT_rho_2, tau_vms_rho * L_m  ) * dx \
+        + inner(LT_m_1  , tau_vms_m   * L_rho) * dx \
+	+ inner(LT_m_2  , tau_vms_m   * L_m  ) * dx \
+	+ inner(LT_m_3  , tau_vms_m   * L_E  ) * dx \
+        + inner(LT_E_1  , tau_vms_E   * L_rho) * dx \
+        + inner(LT_E_2  , tau_vms_E   * L_m  ) * dx \
+        + inner(LT_E_3  , tau_vms_E   * L_E  ) * dx
+
+res_sc = tau_sc_rho * h * h * h * tau * inner(grad(rho_), grad(rho0)) * dx \
+       + tau_sc_m   * h * h * h * tau * inner(grad(m_)  , grad(m0)  ) * dx \
+       + tau_sc_E   * h * h * h * tau * inner(grad(E_)  , grad(E0)  ) * dx
+
+res_sc_ani = tau_anis_sc_rho * h * h * h * tau * inner(anis_dir, grad(rho_)) * inner(anis_dir, grad(rho0)) * dx \
+           + tau_anis_sc_m   * h * h * h * tau * inner(grad(m_)*anis_dir, grad(m0)*anis_dir) * dx \
+           + tau_anis_sc_E   * h * h * h * tau * inner(anis_dir, grad(E_)) * inner(anis_dir, grad(E0)  ) * dx
+
+res = res_fe + res_vms + res_sc + res_sc_ani
+
+a = lhs(res)
+L = rhs(res)
