@@ -23,6 +23,7 @@
 #include "Residual.h"
 #include "Project_DG0_to_CG1.h"
 
+#include <memory>
 #include <sstream>
 #include <lapack.h>
 #include <dolfin.h>
@@ -31,7 +32,7 @@ using namespace dolfin;
 
 real bmarg = 1.0e-3 + DOLFIN_EPS;
 
-real Tfinal = 0.05*100;
+real Tfinal = 5.0;//*100;
 real ubar = 1.0; // Free stream velocity
 real ubar_max = 1.0;
 
@@ -599,7 +600,7 @@ void ComputeRefinementMarkers(Mesh& mesh, Function& residuals, MeshValues<bool, 
 }
 
 // Mesh refinement copied from unicorn
-void MeshRefinement(Mesh& mesh, Function& residuals)
+void MeshRefinement(Mesh& mesh, Function& residuals, AdaptiveRefinement::FunctionMapping functions)
 {
   // Define percentage of cells to refine. Could set the number somewhere else
   //  dolfin_set("adapt_percentage", 0.1);
@@ -616,6 +617,7 @@ void MeshRefinement(Mesh& mesh, Function& residuals)
   //  cell_marker_file << cell_marker;
 
   // Refine cells
+//  AdaptiveRefinement::refine_and_project(mesh, functions, cell_marker);
   AdaptiveRefinement::refine(mesh, cell_marker);
 }
 
@@ -1085,191 +1087,119 @@ int main(int argc, char* argv[])
   message("time step size: %g", tstep);
 
   // Set boundary conditions
-  Analytic<BC_Momentum> momentum_inflow(mesh);
-  Analytic<BC_Poiseuille> poiseuille_inflow(mesh);
-  Analytic<BC_Continuity> continuity_outflow(mesh);
-  Analytic<BC_DirichletSlip> dirichlet_slip(mesh);
-  Analytic<InitialVelocity> zero_velocity(mesh);
   InflowBoundary inflow_boundary;
-  WholeDomain whole_domain;
-  SlipBoundary slip_boundary; // TODO: remove
+  SlipBoundary slip_boundary;
   HorizontalSlipBoundary horizontal_slip_boundary;
   VerticalSlipBoundary vertical_slip_boundary;
   CylinderSlipBoundary cylinder_slip_boundary;
-
   OutflowBoundary outflow_boundary;
 
-  // NodeNormal doesn't handle corners well, so we create three instances of it, and manually manipulate the horizontal and vertical normals
-  NodeNormal horizontal_node_normal(mesh, NodeNormal::facet, DOLFIN_PI/3); // pi/1.9 in unicorn/icns-newton. But it doesn't affect normals, only tangents
-  NodeNormal vertical_node_normal(mesh, NodeNormal::facet, DOLFIN_PI/3);
-  NodeNormal cylinder_node_normal(mesh, NodeNormal::facet, DOLFIN_PI/3);
-  NodeNormal node_normal(mesh, NodeNormal::facet, DOLFIN_PI/3); // 1.2*pi doesn't work if applied everywhere
-  NodeNormal sub_node_normal(mesh, slip_boundary, NodeNormal::facet, DOLFIN_PI/3);
+  // New Boundary Conditions with pointers, to simplify AMR
+  std::unique_ptr<Analytic<BC_Momentum>> momentum_inflow = std::make_unique<Analytic<BC_Momentum>>(mesh);
+  std::unique_ptr<Analytic<BC_Continuity>> continuity_outflow = std::make_unique<Analytic<BC_Continuity>>(mesh);
+  std::unique_ptr<Analytic<InitialVelocity>> zero_velocity = std::make_unique<Analytic<InitialVelocity>>(mesh);
+
+  // NodeNormal doesn't handle corners well, so we create three instances of it,
+  // and manually manipulate the horizontal and vertical normals
+  std::unique_ptr<NodeNormal> horizontal_node_normal = std::make_unique<NodeNormal>(mesh, NodeNormal::facet, DOLFIN_PI / 3);
+  std::unique_ptr<NodeNormal> vertical_node_normal = std::make_unique<NodeNormal>(mesh, NodeNormal::facet, DOLFIN_PI / 3);
+  std::unique_ptr<NodeNormal> cylinder_node_normal = std::make_unique<NodeNormal>(mesh, NodeNormal::facet, DOLFIN_PI / 3);
+  std::unique_ptr<NodeNormal> node_normal = std::make_unique<NodeNormal>(mesh, NodeNormal::facet, DOLFIN_PI / 3);
+  std::unique_ptr<NodeNormal> sub_node_normal = std::make_unique<NodeNormal>(mesh, slip_boundary, NodeNormal::facet, DOLFIN_PI / 3);
 
   // Murtazo Slip
-  BC_Murtazo_Slip murtazo_slip(mesh, sub_node_normal);
-  BC_Murtazo_Slip murtazo_slip_horizontal(mesh, horizontal_node_normal);
-  BC_Murtazo_Slip murtazo_slip_vertical(mesh, vertical_node_normal);
-  BC_Murtazo_Slip murtazo_slip_cylinder(mesh, cylinder_node_normal);
+  std::unique_ptr<BC_Murtazo_Slip> murtazo_slip = std::make_unique<BC_Murtazo_Slip>(mesh, *sub_node_normal);
 
   SubSystem subsystem_y(1);
   SubSystem subsystem_z(2);
 
-  DirichletBC inflow_mom_bc(momentum_inflow, mesh, inflow_boundary);
-  DirichletBC inflow_mom_bc_poiseuille(poiseuille_inflow, mesh, inflow_boundary);
-  DirichletBC outflow_mom_bc_poiseuille(poiseuille_inflow, mesh, outflow_boundary); // Poiseuille analytic solution on the outflow
-  DirichletBC poiseuille_initial(poiseuille_inflow, mesh, whole_domain);
-  //  SlipBC horizontal_slip_bc(mesh, horizontal_slip_boundary, horizontal_node_normal); // This slip should be used
-  //  SlipBC vertical_slip_bc(mesh, vertical_slip_boundary, vertical_node_normal); // This slip should be used
-  SlipBC cylinder_slip_bc(mesh, cylinder_slip_boundary, cylinder_node_normal); // This slip should be used
-  SlipBC slip_bc(mesh, slip_boundary, node_normal); // Testing without defining NodeNormals
-  SlipBC sub_slip_bc(mesh, slip_boundary, sub_node_normal); // Testing NodeNormal with SubDomain
-                                                            //TODO: Testing subsystems
-  DirichletBC horizontal_slip_bc(continuity_outflow, mesh, horizontal_slip_boundary, subsystem_y);
-  DirichletBC vertical_slip_bc(continuity_outflow, mesh, vertical_slip_boundary, subsystem_z);
-  //  DirichletBC slip_bc(dirichlet_slip, mesh, slip_boundary); // TODO: testing dirichlet slip
-  DirichletBC no_slip_bc(zero_velocity, mesh, slip_boundary); // no-slip everywhere
-  DirichletBC no_slip_horizontal(zero_velocity, mesh, horizontal_slip_boundary); // no-slip everywhere
-  DirichletBC no_slip_vertical(zero_velocity, mesh, vertical_slip_boundary); // no-slip everywhere
-  DirichletBC cylinder_no_slip(zero_velocity, mesh, cylinder_slip_boundary);
-  DirichletBC outflow_con_bc(continuity_outflow, mesh, outflow_boundary);
-  DirichletBC inflow_con_bc(continuity_outflow, mesh, inflow_boundary); //TODO: p=0 on inflow, test this next
-  DirichletBC outflow_mom_bc(poiseuille_inflow, mesh, outflow_boundary); // TODO: testing u=poiseuille on the outflow boundary
-                                                                         //  PeriodicBC1 periodic_mom_bc(mesh, periodic_boundary);
-  DirichletBC murtazo_slip_bc(murtazo_slip, mesh, slip_boundary); // Murtazo slip everywhere at once
-  DirichletBC murtazo_slip_bc_horizontal(murtazo_slip_horizontal, mesh, horizontal_slip_boundary); // Murtazo slip on horizontal boundary
-  DirichletBC murtazo_slip_bc_vertical(murtazo_slip_vertical, mesh, vertical_slip_boundary); // Murtazo slip on vertical boundary
-  DirichletBC murtazo_slip_bc_cylinder(murtazo_slip_cylinder, mesh, cylinder_slip_boundary); // Murtazo slip on cylinder boundary
+  // DirichletBCs
+  std::unique_ptr<DirichletBC> inflow_mom_bc = std::make_unique<DirichletBC>(*momentum_inflow, mesh, inflow_boundary);
+  std::unique_ptr<DirichletBC> horizontal_slip_bc = std::make_unique<DirichletBC>(*continuity_outflow, mesh, horizontal_slip_boundary, subsystem_y);
+  std::unique_ptr<DirichletBC> vertical_slip_bc = std::make_unique<DirichletBC>(*continuity_outflow, mesh, vertical_slip_boundary, subsystem_z);
+  std::unique_ptr<DirichletBC> no_slip_bc = std::make_unique<DirichletBC>(*zero_velocity, mesh, slip_boundary);
+  std::unique_ptr<DirichletBC> cylinder_no_slip = std::make_unique<DirichletBC>(*zero_velocity, mesh, cylinder_slip_boundary);
+  std::unique_ptr<DirichletBC> outflow_con_bc = std::make_unique<DirichletBC>(*continuity_outflow, mesh, outflow_boundary);
+  std::unique_ptr<DirichletBC> murtazo_slip_bc = std::make_unique<DirichletBC>(*murtazo_slip, mesh, slip_boundary);
 
+  // Register boundary conditions
   std::vector<BoundaryCondition*> bc_con;
-  bc_con.push_back(&outflow_con_bc);
-  //  bc_con.push_back(&inflow_con_bc);
-  std::vector<BoundaryCondition*> bc_mom;
-  //  bc_mom.push_back(&cylinder_no_slip);
-  //  bc_mom.push_back(&inflow_mom_bc_poiseuille); // For Poiseuille flow test
-  //  bc_mom.push_back(&cylinder_slip_bc);
-  bc_mom.push_back(&horizontal_slip_bc);
-  bc_mom.push_back(&vertical_slip_bc);
-//  bc_mom.push_back(&no_slip_horizontal);
-//  bc_mom.push_back(&no_slip_vertical);
-  //  bc_mom.push_back(&cylinder_no_slip);
-  //  bc_mom.push_back(&cylinder_slip_bc);
-  //  bc_mom.push_back(&slip_bc);
-  //  bc_mom.push_back(&sub_slip_bc);
-  //  bc_mom.push_back(&periodic_mom_bc);
-  bc_mom.push_back(&inflow_mom_bc); //TODO: This should be used
-                                    //  bc_mom.push_back(&sub_slip_bc); //TODO: This has potential, try without on_boundary. Tried, it fails because looping through cells, and the cell is considered internal.
-                                    //  bc_mom.push_back(&slip_bc);
-                                    //  bc_mom.push_back(&no_slip_bc);
-                                    //  bc_mom.push_back(&outflow_mom_bc); // TODO: remove this, it's only for testing
+  bc_con.push_back(outflow_con_bc.get());
 
-                                    // Separate Murtazo BC vector
-  std::vector<BoundaryCondition*> bc_murtazo;
-  //  bc_murtazo.push_back(&murtazo_slip_bc);
-  //  bc_murtazo.push_back(&murtazo_slip_bc_horizontal);
-  //  bc_murtazo.push_back(&murtazo_slip_bc_vertical);
-//  bc_murtazo.push_back(&murtazo_slip_bc_cylinder);
+  std::vector<BoundaryCondition*> bc_mom;
+  // bc_mom.push_back(cylinder_no_slip.get());
+  bc_mom.push_back(horizontal_slip_bc.get());
+  bc_mom.push_back(vertical_slip_bc.get());
+  bc_mom.push_back(inflow_mom_bc.get());
+
 
   // Set up functions
-  Constant dt(tstep);
+  std::unique_ptr<Constant> dt = std::make_unique<Constant>(tstep);
   Constant nu(viscosity);
   Constant beta(0.0);
-  //  Analytic<InitialPressure> d1(mesh); // Stabilization parameter
-  //  Analytic<InitialPressure> d2(mesh); // Stabilization parameter
-  Function d1(mesh);
-  Function d2(mesh);
-  //  Analytic<InitialVelocity> u_initial(mesh); // Velocity in previous time step
-  //  Analytic<InitialVelocity> up(mesh); // Linearized velocity. Not used in the forms, but needed for computing residuals
-  //  Analytic<InitialVelocity> um(mesh); // Cell mean velocity
-  //  Function um(mesh);
-  Function up(mesh);
-  //  Analytic<InitialPressure> p0(mesh); // Is this needed or used? How else to set initial pressure?
+  std::unique_ptr<Function> d1 = std::make_unique<Function>(mesh);
+  std::unique_ptr<Function> d2 = std::make_unique<Function>(mesh);
+  std::unique_ptr<Function> up = std::make_unique<Function>(mesh);
 
   // Create forms
-  NavierStokes3D_force::BilinearForm a_mom(mesh, up, nu, d1, d2, dt, beta, cylinder_node_normal.basis()[0]);
-  NavierStokesContinuity3D::BilinearForm a_con(mesh, d1);
-  Function u(a_mom.trial_space());
-  //  InitialVelocityFunction u_initial(a_mom.trial_space());
-  //  u = u_initial;
-  Function u0(a_mom.trial_space());
-  //  u0 = 1;
-  //  Function up(a_mom.trial_space()); // Needed for bilinear form
-  //  Function um(a_mom.trial_space());
-  Function p(a_con.trial_space());
-  Function p0(a_con.trial_space());
-  //  NavierStokes3Dmin::LinearForm L_mom(mesh, up, u0, p, nu, dt);// d1, d2, dt);
-  //  NavierStokes3Dmin::LinearForm L_mom(mesh, up, u0);
-  //  NavierStokes3Dmin::LinearForm L_mom(mesh);
-  NavierStokes3D_force::LinearForm L_mom(mesh, up, u0, p, nu, d1, d2, dt);
-  NavierStokesContinuity3D::LinearForm L_con(mesh, u, u0); //, d1);
-  PETScMatrix A_mom, A_con;
-  Vector b_mom, b_con;
-  //  a_mom.assemble(A_mom, true);
-  //  a_con.assemble(A_con, true);
+  std::unique_ptr<NavierStokes3D_force::BilinearForm> a_mom = std::make_unique<NavierStokes3D_force::BilinearForm>(mesh, *up, nu, *d1, *d2, *dt, beta, cylinder_node_normal->basis()[0]);
+  std::unique_ptr<NavierStokesContinuity3D::BilinearForm> a_con = std::make_unique<NavierStokesContinuity3D::BilinearForm>(mesh, *d1);
+  std::unique_ptr<Function> u = std::make_unique<Function>(a_mom->trial_space());
+  std::unique_ptr<Function> u0 = std::make_unique<Function>(a_mom->trial_space());
+  std::unique_ptr<Function> p = std::make_unique<Function>(a_con->trial_space());
+  std::unique_ptr<Function> p0 = std::make_unique<Function>(a_con->trial_space());
+  std::unique_ptr<NavierStokes3D_force::LinearForm> L_mom = std::make_unique<NavierStokes3D_force::LinearForm>(mesh, *up, *u0, *p, nu, *d1, *d2, *dt);
+  std::unique_ptr<NavierStokesContinuity3D::LinearForm> L_con = std::make_unique<NavierStokesContinuity3D::LinearForm>(mesh, *u, *u0); //, d1);
+  std::unique_ptr<PETScMatrix> A_mom = std::make_unique<PETScMatrix>();
+  std::unique_ptr<PETScMatrix> A_con = std::make_unique<PETScMatrix>();
+  std::unique_ptr<Vector> b_mom = std::make_unique<Vector>();
+  std::unique_ptr<Vector> b_con = std::make_unique<Vector>();
 
-  //  d1.init(a_mom.trial_space());
-  //  d2.init(a_mom.trial_space());
+  d1->init(L_mom->create_coefficient_space("d1"));
+  d2->init(L_mom->create_coefficient_space("d2"));
 
-  // Initialize vectors for the time step residuals of
-  // the momentum and continuity equations
+  // Initialize vectors for the time step residuals of the momentum and continuity equations
   size_t n = mesh.num_vertices();
-  if(MPI::global_size() > 1) n -= mesh.distdata()[0].num_ghost();
+  if(MPI::global_size() > 1) 
+    n -= mesh.distdata()[0].num_ghost();
   Vector residual_mom(mesh.topology().dim()*n);
   Vector residual_con(n);
 
   // Initialize algebraic solvers   
   KrylovSolver solver_con(gmres, amg);
   KrylovSolver solver_mom(gmres, amg);
-  //  LUSolver solver_con;
-  //  LUSolver solver_mom;
 
   // Sync ghosts of everything. Not sure if this is needed, or why
-  u.sync();  // velocity
-  u0.sync(); // velocity from previous time step 
-  up.sync(); // velocity linearized convection. Basically just velocity from the previous iteration
-             //  um.sync(); // cell mean velocity
-  p.sync();  // pressure
-  p0.sync(); // pressure
-  d1.sync(); // stabilization coefficient
-  d2.sync(); // stabilization coefficient
-
-  //  Assembler assembler(mesh); // Maybe not needed, this could be a dolfin 0.8 thing?
+  u->sync();  // velocity
+  u0->sync(); // velocity from previous time step 
+  up->sync(); // velocity linearized convection. Basically just velocity from the previous iteration
+  p->sync();  // pressure
+  p0->sync(); // pressure
+  d1->sync(); // stabilization coefficient
+  d2->sync(); // stabilization coefficient
 
   // Compute stabilization parameters d1 and d2
-  ComputeStabilization(mesh, u0, viscosity, tstep, d1, d2, L_mom);
+  ComputeStabilization(mesh, *u0, viscosity, tstep, *d1, *d2, *L_mom);
 
   // Compute normal vectors for the surface nodes, needed for the slip boundary condition
-  horizontal_node_normal.init(a_mom.trial_space());
-  vertical_node_normal.init(a_mom.trial_space());
-  cylinder_node_normal.init(a_mom.trial_space());
-  node_normal.init(a_mom.trial_space());
-  sub_node_normal.init(a_mom.trial_space());
-  horizontal_node_normal.compute();
-  vertical_node_normal.compute();
-  cylinder_node_normal.compute();
-  node_normal.compute();
-  sub_node_normal.compute();
+  horizontal_node_normal->init(a_mom->trial_space());
+  vertical_node_normal->init(a_mom->trial_space());
+  cylinder_node_normal->init(a_mom->trial_space());
+  node_normal->init(a_mom->trial_space());
+  sub_node_normal->init(a_mom->trial_space());
+  horizontal_node_normal->compute();
+  vertical_node_normal->compute();
+  cylinder_node_normal->compute();
+  node_normal->compute();
+  sub_node_normal->compute();
 
   // TODO: Testing manipulating node_normal
-  /*  node_normal.basis()[0].decompose()[0]->zero();
-      node_normal.basis()[0].decompose()[1]->zero();
-      node_normal.basis()[0].decompose()[2]->zero();
-   *(node_normal.basis()[0].decompose()[0]) = 0;
-   *(node_normal.basis()[0].decompose()[1]) = 0;
-   *(node_normal.basis()[0].decompose()[2]) = 0;
-   node_normal.basis()[0].decompose()[0]->disp();
-   node_normal.basis()[0].decompose()[1]->disp();
-   node_normal.basis()[0].decompose()[2]->disp(); */
-  //  horizontal_node_normal.basis()[0].vector().disp();
-  SetNormal(mesh, horizontal_node_normal, true);
-  SetNormal(mesh, vertical_node_normal, false);
-  SetCylinderNormal(mesh, cylinder_node_normal);
+  SetNormal(mesh, *horizontal_node_normal, true);
+  SetNormal(mesh, *vertical_node_normal, false);
+  SetCylinderNormal(mesh, *cylinder_node_normal);
 
   // Set Murtazo's slip BC to use u and up
-  murtazo_slip.set_velocities(&u); //&up
-  murtazo_slip_horizontal.set_velocities(&up);
-  murtazo_slip_vertical.set_velocities(&up);
-  murtazo_slip_cylinder.set_velocities(&up);
+  murtazo_slip->set_velocities(u.get()); //&up
 
   // Time stepping and iteration parameters
   double t = 0.0;
@@ -1282,70 +1212,56 @@ int main(int argc, char* argv[])
   int max_iteration = 10; //50;
 
   // Initialize residual function, to be used for adaptive mesh refinement
-  Function residual_function(mesh); // Should I tie this to the trial function of Residual, or just assemble LRes into residual_function.vector()?
-                                    //  Function um(mesh);
-                                    //  Function u0m(mesh);
-                                    //  Function pm(mesh);
-  Function residual_cell(mesh); // Residual on cell level
+  std::unique_ptr<Function> residual_function = std::make_unique<Function>(mesh); // Should I tie this to the trial function of Residual, or just assemble LRes into residual_function.vector()?
+  std::unique_ptr<Function> residual_cell = std::make_unique<Function>(mesh); // Residual on cell level
 
   //  Residual::BilinearForm aRes(mesh); // Unused I think, so I can probably remove this
-  Residual::LinearForm LRes(mesh, u, u0, p, dt);
+  std::unique_ptr<Residual::LinearForm> LRes = std::make_unique<Residual::LinearForm>(mesh, *u, *u0, *p, *dt);
 
-  residual_function.init(LRes.create_coefficient_space("U")); // Get it as linear 3D vector first, then average on cell level
-                                                              //  um.init(LRes.create_coefficient_space("Um"));
-                                                              //  u0m.init(LRes.create_coefficient_space("Um"));
-                                                              //  pm.init(LRes.create_coefficient_space("P"));
-  residual_cell.init(LRes.create_coefficient_space("k"));
+  residual_function->init(LRes->create_coefficient_space("U")); // Get it as linear 3D vector first, then average on cell level
+  residual_cell->init(LRes->create_coefficient_space("k"));
 
   // Initialize piecewise constant triple decomposition functions
-  Function triple_shear(mesh);
-  Function triple_strain(mesh);
-  Function triple_rotation(mesh);
+  std::unique_ptr<Function> triple_shear = std::make_unique<Function>(mesh);
+  std::unique_ptr<Function> triple_strain = std::make_unique<Function>(mesh);
+  std::unique_ptr<Function> triple_rotation = std::make_unique<Function>(mesh);
   // Initialize piecewise linear triple decomposition functions, needed to
   // print to binary file format
   Function shear_linear(mesh);
   Function strain_linear(mesh);
   Function rotation_linear(mesh);
 
-  Function vol_inv(mesh);
+  std::unique_ptr<Function> vol_inv = std::make_unique<Function>(mesh);
 
   // Assembling L=inner(grad(u),v) outputs grad(u) directly, no need to solve anything. LGrad also only needs to be created once
-  Gradient::BilinearForm aGrad(mesh);
-  Gradient::LinearForm LGrad(mesh, u, vol_inv);
+  std::unique_ptr<Gradient::BilinearForm> aGrad = std::make_unique<Gradient::BilinearForm>(mesh);
+  std::unique_ptr<Gradient::LinearForm> LGrad = std::make_unique<Gradient::LinearForm>(mesh, *u, *vol_inv);
 
   // Initialize functions with the appropriate FE space
-  vol_inv.init(LGrad.create_coefficient_space("icv"));
-  triple_shear.init(LGrad.create_coefficient_space("icv"));
-  triple_strain.init(LGrad.create_coefficient_space("icv"));
-  triple_rotation.init(LGrad.create_coefficient_space("icv"));
+  vol_inv->init(LGrad->create_coefficient_space("icv"));
+  triple_shear->init(LGrad->create_coefficient_space("icv"));
+  triple_strain->init(LGrad->create_coefficient_space("icv"));
+  triple_rotation->init(LGrad->create_coefficient_space("icv"));
 //  shear_linear.init(LGrad.create_coefficient_space("u"));
 //  strain_linear.init(LGrad.create_coefficient_space("u"));
 //  rotation_linear.init(LGrad.create_coefficient_space("u"));
 
   // Compute inverse of mesh cell volumes, needed to compute the triple decomposition
-  ComputeVolInv(mesh, vol_inv);
+  ComputeVolInv(mesh, *vol_inv);
 
   // Output files
   File solutionfile("solution.pvd");
-  //  std::vector<std::pair<Function*, std::string> > output;
   LabelList<Function> output;
-  //  std::pair<Function*, std::string> u_output(&u, "Velocity");
-  //  std::pair<Function*, std::string> p_output(&p, "Pressure");
-  //  std::pair<Function*, std::string> n_output(&sub_node_normal.basis()[0], "Normals");
-  Label<Function> u_output(u, "Velocity");
-  Label<Function> p_output(p, "Pressure");
-  Label<Function> n_output(sub_node_normal.basis()[0], "Normals");
-  Label<Function> sh_output(triple_shear, "Shear");
-  Label<Function> el_output(triple_strain, "Strain");
-  Label<Function> rr_output(triple_rotation, "Rotation");
-//  Label<Function> res_output(residual_cell, "Residual");
-  output.push_back(u_output);
-  output.push_back(p_output);
-  output.push_back(n_output);
-  output.push_back(sh_output);
-  output.push_back(el_output);
-  output.push_back(rr_output);
-//  output.push_back(res_output);
+  output.push_back(Label<Function>(*u, "Velocity"));
+  output.push_back(Label<Function>(*p, "Pressure"));
+  output.push_back(Label<Function>(sub_node_normal->basis()[0], "Normals"));
+  output.push_back(Label<Function>(*triple_shear, "Shear"));
+  output.push_back(Label<Function>(*triple_strain, "Strain"));
+  output.push_back(Label<Function>(*triple_rotation, "Rotation"));
+
+  // Put all P1 vector functions in FunctionMapping, to ensure they are projected onto the new AMR mesh
+  // Except it doesn't seem to work, so don't bother...
+  AdaptiveRefinement::FunctionMapping functions;
 
   // Debugging files
   File residual_file("residual.pvd");
@@ -1357,18 +1273,18 @@ int main(int argc, char* argv[])
   solutionfile << output;
 #endif
 
-  // HeartSolver/Dolfin 0.8 assembling
-  //  Assembler assembler_con;
-  //  Assembler assembler_mom;
-
+  // Number of adaptive mesh refinements
   int runs = 5;
 
   // Time stepping!
-  for(int i = 0; i < runs; i++)
+  for(int j = 0; j < runs; j++)
   {
     while(t < Tfinal)
     {
-      dt = (t+tstep > Tfinal ? Tfinal-t : dt);
+      if(t+tstep > Tfinal)
+      {
+        *(dt) = Tfinal-t;
+      }
 
       // Ramp up inflow condition
       ubar = std::min(ubar_max, ubar_max*(step+1)/10);
@@ -1388,29 +1304,29 @@ int main(int argc, char* argv[])
           iteration < 1)
       {
         // Set linearized velocity to current velocity
-        up = u;
-        p0 = p; // p0 is pressure from last iteration? I thought from last time step
+        *up = *u;
+        *p0 = *p; // p0 is pressure from last iteration? I thought from last time step
                 // NSESolver syncs here, but it's already done for u, isn't that enough?
-        up.sync();
-        p0.sync();
+        up->sync();
+        p0->sync();
 
         // Try resetting A and b. This was needed because A and b didn't reset, but then I realized the reset
         // boolean should be false to force reset
         //      if(step > 0)
         if(false)
         {
-          b_con.zero();
-          A_con.zero();
-          b_mom.zero();
-          A_mom.zero();
+          b_con->zero();
+          A_con->zero();
+          b_mom->zero();
+          A_mom->zero();
         }
 
-        message("norm(u): %g", u.vector().norm(l2));
-        message("norm(up): %g", up.vector().norm(l2));
-        message("norm(u0): %g", u0.vector().norm(l2));
+        message("norm(u): %g", u->vector().norm(l2));
+        message("norm(up): %g", up->vector().norm(l2));
+        message("norm(u0): %g", u0->vector().norm(l2));
 
 
-        ComputeStabilization(mesh, u0, viscosity, tstep, d1, d2, L_mom); //TODO: This should not be commented out
+        ComputeStabilization(mesh, *u0, viscosity, tstep, *d1, *d2, *L_mom); //TODO: This should not be commented out
 
         // Compute cell mean velocity
         //      ComputeMean(mesh, um, up, a_mom);
@@ -1425,20 +1341,20 @@ int main(int argc, char* argv[])
         // Trying to add old A_con
         if(false)//(step > 0)
         {
-          PETScMatrix A_con_old(A_con.size(0), A_con.size(0), false);
-          A_con_old.dup(A_con);
-          a_con.assemble(A_con, true);
-          A_con += A_con_old;
+          PETScMatrix A_con_old(A_con->size(0), A_con->size(0), false);
+          A_con_old.dup(*A_con);
+          a_con->assemble(*A_con, true);
+          *A_con += A_con_old;
         }
         else
         {
-          a_con.assemble(A_con, step == 0);
+          a_con->assemble(*A_con, step == 0);
         }
         // Trying to add old A_con to new
-        L_con.assemble(b_con, step == 0);
+        L_con->assemble(*b_con, step == 0);
 
-        A_con.mult(p.vector(), residual_con);
-        residual_con -= b_con;
+        A_con->mult(p->vector(), residual_con);
+        residual_con -= *b_con;
         //      residual_con += p.vector(); //TODO: remove, just checking if A*u-b=u
         message("A_con*p-b_con=%g before applying boundary conditions", residual_con.norm(l2));      
 
@@ -1447,12 +1363,12 @@ int main(int argc, char* argv[])
         for(uint i = 0; i < bc_con.size(); i++)
         {
           //        if(step < 15)
-          bc_con[i]->apply(A_con, b_con, a_con);
+          bc_con[i]->apply(*A_con, *b_con, *a_con);
         }
 
         // Solve the continuity equation
-        solver_con.solve(A_con, p.vector(), b_con);
-        p.sync(); // Ashish syncs after solving, NSESolver does not. I think it makes sense
+        solver_con.solve(*A_con, p->vector(), *b_con);
+        p->sync(); // Ashish syncs after solving, NSESolver does not. I think it makes sense
 
         //      message("norm(A) before assemble: %g", A_mom.norm());
 
@@ -1463,8 +1379,8 @@ int main(int argc, char* argv[])
         //      Assembler::assemble(A_mom, a_mom, true);
         //      Assembler::assemble(b_mom, L_mom, true);
         // Assemble momentum vector
-        a_mom.assemble(A_mom, step == 0);
-        L_mom.assemble(b_mom, step == 0);
+        a_mom->assemble(*A_mom, step == 0);
+        L_mom->assemble(*b_mom, step == 0);
         //      A_mom/=tstep;
         //      A_mom.apply();
         // Setting A_mom += I
@@ -1476,92 +1392,71 @@ int main(int argc, char* argv[])
         //        A_mom.setitem(diagonal_index, A_mom(i,i) + 1.0);
         //        A_mom.apply();
         //      }//TODO: adding an identity matrix gives a correct solution, but is it just because A_mom is small?
-        message("norm(A) before BC: %g", A_mom.norm("frobenius"));
-        A_mom.mult(u.vector(), residual_mom);
-        residual_mom -= b_mom;
+        message("norm(A) before BC: %g", A_mom->norm("frobenius"));
+        A_mom->mult(u->vector(), residual_mom);
+        residual_mom -= *b_mom;
         message("A*u-b=%g before applying boundary conditions", residual_mom.norm(l2));
-        residual_mom += u.vector(); //TODO: remove, just checking if A*u-b=u
-        message("norm(b): %g", b_mom.norm(l2));
+        residual_mom += u->vector(); //TODO: remove, just checking if A*u-b=u
+        message("norm(b): %g", b_mom->norm(l2));
         message("A*u-b+u=%g before applying boundary conditions", residual_mom.norm(l2));
         //      message("norm(A) before applying boundary conditions: %g", A_mom.norm());
         Vector u_minus_b(mesh.topology().dim()*n);
         u_minus_b.zero();
-        u_minus_b += u.vector();
-        u_minus_b -= b_mom;
+        u_minus_b += u->vector();
+        u_minus_b -= *b_mom;
         message("u-b=%g", u_minus_b.norm(l2));
-        //      message("before BC:");
-        //      compute_condition_number(A_mom);
-        //      message("norm(b) before applying boundary conditions: %g", b_mom.norm(l2));
-        //      if(step == 0)
 
-        //      if(step <= 20)
-        /*      if(false)
-                {
-                cylinder_no_slip.apply(A_mom, b_mom, a_mom);
-                }
-                else
-                {
-                cylinder_slip_bc.apply(A_mom, b_mom, a_mom);
-                }*/
-
-        if(false)
+        for(uint i = 0; i < bc_mom.size(); i++)
         {
-          poiseuille_initial.apply(A_mom, b_mom, a_mom);
-        }
-        else
-        {
-          for(uint i = 0; i < bc_mom.size(); i++)
-          {
-            bc_mom[i]->apply(A_mom, b_mom, a_mom);
-          }
+          bc_mom[i]->apply(*A_mom, *b_mom, *a_mom);
         }
         //      if(step < 5) outflow_mom_bc_poiseuille.apply(A_mom, b_mom, a_mom); // Analytic solution on the outflow for the first steps
 
-        A_mom.mult(u.vector(), residual_mom);
-        residual_mom -= b_mom;
+        A_mom->mult(u->vector(), residual_mom);
+        residual_mom -= *b_mom;
         //      residual_mom += u.vector(); //TODO: remove, just checking if A*u-b=u
         //      Vector u_minus_b(mesh.topology().dim()*n);
         u_minus_b.zero();
-        u_minus_b += u.vector();
-        u_minus_b -= b_mom;
-        message("norm(A) after BC: %g", A_mom.norm("frobenius"));
+        u_minus_b += u->vector();
+        u_minus_b -= *b_mom;
+        message("norm(A) after BC: %g", A_mom->norm("frobenius"));
         //      message("norm(b): %g", b_mom.norm(l2));
         message("A*u-b=%g", residual_mom.norm(l2));
         // Solve the momentum equation
-        solver_mom.solve(A_mom, u.vector(), b_mom);
-        u.sync();
+        solver_mom.solve(*A_mom, u->vector(), *b_mom);
+        u->sync();
 
         // Residual2 moved here
         residual_mom = 0;
-        A_mom.mult(u.vector(), residual_mom);
-        residual_mom -= b_mom;
-        A_con.mult(p.vector(), residual_con);
-        residual_con -= b_con;
+        A_mom->mult(u->vector(), residual_mom);
+        residual_mom -= *b_mom;
+        A_con->mult(p->vector(), residual_con);
+        residual_con -= *b_con;
 
         residual2 = sqrt(sqr(residual_mom.norm()) + sqr(residual_con.norm()));
 
         // Trying Murtazo after residual2. Au-b will never converge if doing this before calculating it
-        murtazo_slip_bc.apply(A_mom, u.vector(), a_mom); // Does this work? Applying with u instead of b should be enough?
-        u.sync();
+        murtazo_slip_bc->apply(*A_mom, u->vector(), *a_mom); // Does this work? Applying with u instead of b should be enough?
+        u->sync();
 
         // Compute more residuals
         residual = 0;
 
-        residual_con = p.vector();
-        residual_con -= p0.vector();
+        residual_con = p->vector();
+        residual_con -= p0->vector();
         residual_c = 0;
-        if(p.vector().norm(linf) > 1.0e-8)
+        if(p->vector().norm(linf) > 1.0e-8)
         {
-          residual_c = residual_con.norm(l2) / p.vector().norm(l2);
+          residual_c = residual_con.norm(l2) / p->vector().norm(l2);
           residual += residual_c;
         }
 
-        residual_mom = u.vector();
-        residual_mom -= up.vector(); // Comparing u after solve before murtazo shift with the same from last time step
+        residual_mom = u->vector();
+        residual_mom -= up->vector(); // Comparing u after solve before murtazo shift with the same from last time step
         residual_m = 0;
-        if(u.vector().norm(linf) > 1.0e-8)
+        if(u->vector().norm(linf) > 1.0e-8)
         {
-          residual_m = residual_mom.norm(l2) / u.vector().norm(l2);
+          residual_m = residual_mom.norm(l2) / u->vector().norm(l2);
           residual += residual_m;
         }
 
@@ -1577,13 +1472,15 @@ int main(int argc, char* argv[])
         //        last_residual = residual;
       } // Fix-point iteration for non-linear problem closed
 
-      // Compute residual
-      message("residual function vector size: %d", residual_function.vector().size());
-      LRes.assemble(residual_function.vector(), false); // false means reassemble, which we always want?
-      ComputeMeanResidual(mesh, residual_cell, residual_function);
+      // Compute residual. Skip some time steps at the start
+      LRes->assemble(residual_function->vector(), step == 0); // false means reassemble, which we always want?
+      if(t > 0.2*Tfinal)
+      {
+        ComputeMeanResidual(mesh, *residual_cell, *residual_function);
+      }
 
       // Set p0=p here too? Is it from last iteration or last time step?
-      u0 = u;
+      *u0 = *u;
       //    u0m = um;
       t += tstep;
       step++;
@@ -1593,7 +1490,7 @@ int main(int argc, char* argv[])
       if(step < 10 || std::floor(10*t) > std::floor(10*(t-tstep))) // Print the 100 first timesteps, then ten times per simulated second
       {
         // Compute triple decomposition
-        computeTripleDecomposition(mesh, u, vol_inv, triple_shear, triple_strain, triple_rotation);
+        computeTripleDecomposition(mesh, *u, *vol_inv, *triple_shear, *triple_strain, *triple_rotation);
 
 //        project_DG0_to_CG1(mesh, triple_shear, shear_linear);
 //        project_DG0_to_CG1(mesh, triple_strain, strain_linear);
@@ -1605,19 +1502,130 @@ int main(int argc, char* argv[])
       message("------------------------------------ Step %d finished ------------------------------------", step);
     }
 
+    // Adaptive Mesh Refinement (AMR)
     if(true)
     {
       // Refine mesh, then reset simulation time and solution
-      MeshRefinement(mesh, residual_cell);
+      MeshRefinement(mesh, *residual_cell, functions);
       t = 0.0;
-      step = 0;
-      // Do Functions need to be reinitiated?
-      u.zero();
-      u0.zero();
-      p.zero();
+      step = 0; //TODO: Probably don't want this, since it overwrites previous files
+
+      // Set time step (proportional to the minimum cell diameter) 
+      // Get minimum cell diameter
+      for (CellIterator cell(mesh); !cell.end(); ++cell)
+      {
+        if ((*cell).diameter() < hminlocal) hminlocal = (*cell).diameter();
+      } 
+      MPI_Barrier(dolfin::MPI::DOLFIN_COMM);
+      MPI_Allreduce(&hminlocal, &hmin, 1, MPI_DOUBLE, MPI_MIN, dolfin::MPI::DOLFIN_COMM);
+      real tstep = 0.15*hmin/ubar; // 0.15 taken from unicorn icns 3D cylinder
+      message("hmin = %g", hmin);
+      message("time step size: %g", tstep);
+
+      // Recreate Functions
+      up = std::make_unique<Function>(mesh);
+      d1 = std::make_unique<Function>(mesh);
+      d2 = std::make_unique<Function>(mesh);
+      residual_function = std::make_unique<Function>(mesh);
+      residual_cell = std::make_unique<Function>(mesh);
+      triple_shear = std::make_unique<Function>(mesh);
+      triple_strain = std::make_unique<Function>(mesh);
+      triple_rotation = std::make_unique<Function>(mesh);
+      vol_inv = std::make_unique<Function>(mesh);
+
+      // Recreate boundary conditions
+      momentum_inflow = std::make_unique<Analytic<BC_Momentum>>(mesh);
+      continuity_outflow = std::make_unique<Analytic<BC_Continuity>>(mesh);
+      zero_velocity = std::make_unique<Analytic<InitialVelocity>>(mesh);
+
+      horizontal_node_normal = std::make_unique<NodeNormal>(mesh, NodeNormal::facet, DOLFIN_PI / 3);
+      vertical_node_normal = std::make_unique<NodeNormal>(mesh, NodeNormal::facet, DOLFIN_PI / 3);
+      cylinder_node_normal = std::make_unique<NodeNormal>(mesh, NodeNormal::facet, DOLFIN_PI / 3);
+      node_normal = std::make_unique<NodeNormal>(mesh, NodeNormal::facet, DOLFIN_PI / 3);
+      sub_node_normal = std::make_unique<NodeNormal>(mesh, slip_boundary, NodeNormal::facet, DOLFIN_PI / 3);
+
+      murtazo_slip = std::make_unique<BC_Murtazo_Slip>(mesh, *sub_node_normal);
+
+      inflow_mom_bc = std::make_unique<DirichletBC>(*momentum_inflow, mesh, inflow_boundary);
+      horizontal_slip_bc = std::make_unique<DirichletBC>(*continuity_outflow, mesh, horizontal_slip_boundary, subsystem_y);
+      vertical_slip_bc = std::make_unique<DirichletBC>(*continuity_outflow, mesh, vertical_slip_boundary, subsystem_z);
+      no_slip_bc = std::make_unique<DirichletBC>(*zero_velocity, mesh, slip_boundary);
+      cylinder_no_slip = std::make_unique<DirichletBC>(*zero_velocity, mesh, cylinder_slip_boundary);
+      outflow_con_bc = std::make_unique<DirichletBC>(*continuity_outflow, mesh, outflow_boundary);
+      murtazo_slip_bc = std::make_unique<DirichletBC>(*murtazo_slip, mesh, slip_boundary);
+
+      // Put the new boundary conditions in the vectors
+      bc_con[0] = outflow_con_bc.get();
+      bc_mom[0] = horizontal_slip_bc.get();
+      bc_mom[1] = vertical_slip_bc.get();
+      bc_mom[2] = inflow_mom_bc.get();
+
+      // Recreate forms
+      a_mom = std::make_unique<NavierStokes3D_force::BilinearForm>(mesh, *up, nu, *d1, *d2, *dt, beta, cylinder_node_normal->basis()[0]);
+      a_con = std::make_unique<NavierStokesContinuity3D::BilinearForm>(mesh, *d1);
+      // Some functions that are used in the forms but dependent on the spaces
+      u = std::make_unique<Function>(a_mom->trial_space());
+      u0 = std::make_unique<Function>(a_mom->trial_space());
+      p = std::make_unique<Function>(a_con->trial_space());
+      p0 = std::make_unique<Function>(a_con->trial_space());
+      // More forms
+      L_mom = std::make_unique<NavierStokes3D_force::LinearForm>(mesh, *up, *u0, *p, nu, *d1, *d2, *dt);
+      L_con = std::make_unique<NavierStokesContinuity3D::LinearForm>(mesh, *u, *u0);
+      LRes = std::make_unique<Residual::LinearForm>(mesh, *u, *u0, *p, *dt);
+      aGrad = std::make_unique<Gradient::BilinearForm>(mesh);
+      LGrad = std::make_unique<Gradient::LinearForm>(mesh, *u, *vol_inv);
+
+      // Recreate matrices and vectors
+      A_mom = std::make_unique<PETScMatrix>();
+      A_con = std::make_unique<PETScMatrix>();
+      b_mom = std::make_unique<Vector>();
+      b_con = std::make_unique<Vector>();
+
+      // Resize vectors for the time step residuals of the momentum and continuity equations
+      n = mesh.num_vertices();
+      if(MPI::global_size() > 1)
+        n -= mesh.distdata()[0].num_ghost();
+      residual_mom.init(mesh.topology().dim() * n);
+      residual_con.init(n);
+
+      // Re-compute normal vectors for the surface nodes, needed for the slip boundary condition
+      horizontal_node_normal->init(a_mom->trial_space());
+      vertical_node_normal->init(a_mom->trial_space());
+      cylinder_node_normal->init(a_mom->trial_space());
+      node_normal->init(a_mom->trial_space());
+      sub_node_normal->init(a_mom->trial_space());
+      horizontal_node_normal->compute();
+      vertical_node_normal->compute();
+      cylinder_node_normal->compute();
+      node_normal->compute();
+      sub_node_normal->compute();
+
+      SetNormal(mesh, *horizontal_node_normal, true);
+      SetNormal(mesh, *vertical_node_normal, false);
+      SetCylinderNormal(mesh, *cylinder_node_normal);
+
+      // Set Murtazo's slip BC to use u
+      murtazo_slip->set_velocities(u.get());
+
+      // Re-initate functions. I hope this can be done this late
+      d1->init(L_mom->create_coefficient_space("d1"));
+      d2->init(L_mom->create_coefficient_space("d2"));
+      residual_function->init(LRes->create_coefficient_space("U"));
+      residual_cell->init(LRes->create_coefficient_space("k"));
+      vol_inv->init(LGrad->create_coefficient_space("icv"));
+      triple_shear->init(LGrad->create_coefficient_space("icv"));
+      triple_strain->init(LGrad->create_coefficient_space("icv"));
+      triple_rotation->init(LGrad->create_coefficient_space("icv"));
+
+      // Update output
+      output[0] = Label<Function>(*u, "Velocity");
+      output[1] = Label<Function>(*p, "Pressure");
+      output[2] = Label<Function>(sub_node_normal->basis()[0], "Normals");
+      output[3] = Label<Function>(*triple_shear, "Shear");
+      output[4] = Label<Function>(*triple_strain, "Strain");
+      output[5] = Label<Function>(*triple_rotation, "Rotation");
     }
   }
-  //  unicorn_solve(mesh, chkp, w_limit, s_time, iter, 0, &smooth, &solve);
 
   dolfin_finalize();
   return 0;

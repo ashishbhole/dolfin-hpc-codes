@@ -1,11 +1,11 @@
-CFLAGS  = `pkg-config --cflags dolfin` -g
+CXXFLAGS  = `pkg-config --cflags dolfin` -std=c++14 -g
 LIBS    = `pkg-config --libs dolfin`
 CXX     = `pkg-config --variable=compiler dolfin`
 
 DEST    = demo
 OBJECTS = main.o
 
-DIR=/cfs/klemming/projects/snic/heartsolver/joel/cylinder6
+DIR=/cfs/klemming/projects/snic/heartsolver/joel/cylinder3
 
 all: $(DEST)
 
@@ -24,7 +24,7 @@ clean:
 	-rm -f *.o core *.core $(OBJECTS) $(DEST) *.log *.vtu *.pvtu *.pvd solution* *.out
 
 $(DEST): $(OBJECTS)
-	$(CXX) -o $@ $(OBJECTS) $(CFLAGS) $(LIBS)
+	$(CXX) -o $@ $(OBJECTS) $(CXXFLAGS) $(LIBS)
 
 .cpp.o:
-	$(CXX) $(CFLAGS) -c $<
+	$(CXX) $(CXXFLAGS) -c $<
