@@ -10,13 +10,13 @@
 using namespace dolfin;
 
 real GAMMA = 1.4;
-real tstep = 1e-7;
+real tstep = 2e-7;
 real Tfinal  = 2.0;
 
 real rho_inf = 1.4;
 real p_inf = 101325.0;
 
-real Mach = 1.5; // 2.52;
+real Mach = 3.0; // 2.52;
 real c = sqrt(GAMMA * p_inf / rho_inf);
 
 uint save_iter = 100;
@@ -69,7 +69,7 @@ struct InitialCondition: public Value< InitialCondition, 4 >
   void eval( real * values, const real * x ) const
   {
       values[0] = rho_inf;
-      values[1] = rho_inf * c * Mach; // 0.0;
+      values[1] = rho_inf * c * Mach;
       values[2] = 0.0;
       values[3] = p_inf/ (GAMMA-1.0) + 0.5*abs(values[1]*values[1]+values[2]*values[2])/rho_inf;
   }
@@ -78,11 +78,7 @@ struct InitialCondition: public Value< InitialCondition, 4 >
 int main(int argc, char **argv)
 { 
   dolfin_init(argc, argv);
-  Mesh mesh("cylinder.bin");
-
-  SubSystem density(0);
-  SubSystem momentum(1);
-  SubSystem energy(2);
+  Mesh mesh("cylinder_coarse.bin");
 
   // Create periodic boundary condition
   Inflow inflow;
@@ -92,19 +88,21 @@ int main(int argc, char **argv)
   Analytic<InflowBC> wi(mesh);
   Analytic<InitialCondition> wic(mesh);
 
-  MeshValues<size_t, Facet> ext_boundaries(mesh);
-  ext_boundaries = 0;
-  cylwall.mark(ext_boundaries, 0);
-  tunwall.mark(ext_boundaries, 0);
-  inflow.mark(ext_boundaries, 1);
-  outflow.mark(ext_boundaries, 2);
+  MeshValues<size_t, Cell> sub_domains(mesh);
+  sub_domains = 0;
+
+  MeshValues<size_t, Facet> boundaries(mesh);
+  boundaries = 10;
+  inflow.mark (boundaries, 1);
+  outflow.mark(boundaries, 2);  
+  cylwall.mark(boundaries, 0);
+  tunwall.mark(boundaries, 0);
 
   // For initial conditions 
   double t = 0.0;
 
   DirichletBC bc_inflow( wi, mesh, inflow );
   DirichletBC bc_outflow( wi, mesh, outflow );
-  
 
   // time step computation
   double Nc = 0.05;
@@ -116,21 +114,21 @@ int main(int argc, char **argv)
   Constant tau_vms_rho(0.0*tstep);
   Constant tau_vms_m  (0.0*tstep);
   Constant tau_vms_E  (0.0*tstep);
-  Constant tau_sc_rho (1e-8);
-  Constant tau_sc_m   (1e-8);
-  Constant tau_sc_E   (1e-8);
+  Constant tau_sc_rho      (1e-8);
+  Constant tau_sc_m        (1e-8);
+  Constant tau_sc_E        (1e-8);
   Constant tau_anis_sc_rho (1e-6);
   Constant tau_anis_sc_m   (1e-6);
   Constant tau_anis_sc_E   (1e-6);
 
   Matrix A, A1;
   Vector b, b1;
-  KrylovSolver solver( gmres, bjacobi );
+  KrylovSolver solver( bicgstab, bjacobi );
 
   Projection::BilinearForm a1(mesh);
   Function w0(a1.trial_space());
   a1.assemble(A1, true);
-  Projection::LinearForm L1(mesh, wi);
+  Projection::LinearForm L1(mesh, wic);
   L1.assemble(b1, true);
   solver.solve(A1, w0.vector(), b1);
   w0.sync();
@@ -143,7 +141,7 @@ int main(int argc, char **argv)
   rho0 = SubFunction(w0, 0);
   m0   = SubFunction(w0, 1);
   E0   = SubFunction(w0, 2);
-
+  
   File file("sol.pvd", t);
 
   LabelList<Function> output;
@@ -158,7 +156,9 @@ int main(int argc, char **argv)
   file << output;
 
   Euler::LinearForm L(mesh, rho0, m0, E0, dt, tau_vms_rho, tau_vms_m, tau_vms_E, tau_sc_rho, tau_sc_m, tau_sc_E, tau_anis_sc_rho, tau_anis_sc_m, tau_anis_sc_E );
-  a.assemble(A, true);
+
+  //a.assemble(A, true);
+  Assembler::assemble( A, a, sub_domains, boundaries, boundaries, true );
 
   uint step = 0;
 
@@ -166,11 +166,13 @@ int main(int argc, char **argv)
   {
     // Adjust dt to reach final time exactly
     if (t+tstep > Tfinal) dt = Tfinal - t;
-    L.assemble(b, step==0);
+    //L.assemble(b, step==0);
+    Assembler::assemble(b, L, sub_domains, boundaries, boundaries, step==0);
+
     bc_inflow.apply( A, b, a );
-    bc_outflow.apply( A, b, a );
 
     solver.solve(A, w1.vector(), b);
+
     w1.sync();
     w0 = w1;
 

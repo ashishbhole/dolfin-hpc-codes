@@ -4,14 +4,16 @@
 dim = 2
 deg = 1
 cell = triangle
-E1 = FiniteElement("Lagrange", cell, degree=deg)
-E2 = VectorElement("Lagrange", cell, degree=deg)
-E3 = FiniteElement("Lagrange", cell, degree=deg)
+E1 = FiniteElement("CG", cell, degree=deg)
+E2 = VectorElement("CG", cell, degree=deg)
+E3 = FiniteElement("CG", cell, degree=deg)
 WE = MixedElement(E1, E2, E3)
+
+dx = Measure("dx", metadata={"quadrature_degree": 3})
 
 v = TestFunction(WE)
 u = TrialFunction(WE)
 f = Coefficient(WE)
 
-a = inner(v, u)*dx
-L = inner(v, f)*dx
+a = inner(v, u)*dx(0)
+L = inner(v, f)*dx(0)
