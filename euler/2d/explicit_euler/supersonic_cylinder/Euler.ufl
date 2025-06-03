@@ -1,4 +1,4 @@
-# Copyright (C) 2024 Ashish Bhole.
+# Copyright (C) 2025 Ashish Bhole.
 # Licensed under the GNU LGPL Version 2.1.
 
 import numpy as np
@@ -77,7 +77,7 @@ LT_E_1 = (m2/(r2*r0_pos) - gamma*E0/r2) * inner(m0, grad(E_))
 LT_E_2 = - m0 * inner(m0, grad(E_)) / rho0 + (E0+p0) * grad(E_) / r0_pos
 LT_E_3 = gamma * inner(m0, grad(E_))
 
-# weak form
+# weak form 
 res_fe = rho_*rho*dx(0) - rho_*rho0*dx(0) - dt*inner(grad(rho_), m0)*dx(0) \
        + dt*rho_*inner(m0,n)*ds(1) \
        + dt*rho_*inner(m0,n)*ds(2) \
@@ -92,6 +92,7 @@ res_fe = rho_*rho*dx(0) - rho_*rho0*dx(0) - dt*inner(grad(rho_), m0)*dx(0) \
        + dt*E_*inner((E0+p0)*m0/r0_pos,n)*ds(1) \
        + dt*E_*inner((E0+p0)*m0/r0_pos,n)*ds(2)
 
+# L2 stabilization
 res_vms = inner(LT_rho_2, tau_vms_rho * L_m  ) * dx(0) \
         + inner(LT_m_1  , tau_vms_m   * L_rho) * dx(0) \
 	+ inner(LT_m_2  , tau_vms_m   * L_m  ) * dx(0) \
@@ -100,6 +101,7 @@ res_vms = inner(LT_rho_2, tau_vms_rho * L_m  ) * dx(0) \
         + inner(LT_E_2  , tau_vms_E   * L_m  ) * dx(0) \
         + inner(LT_E_3  , tau_vms_E   * L_E  ) * dx(0)
 
+# BV stabilization
 res_sc = tau_sc_rho * h * h * h * tau * inner(grad(rho_), grad(rho0)) * dx(0) \
        + tau_sc_m   * h * h * h * tau * inner(grad(m_)  , grad(m0)  ) * dx(0) \
        + tau_sc_E   * h * h * h * tau * inner(grad(E_)  , grad(E0)  ) * dx(0)

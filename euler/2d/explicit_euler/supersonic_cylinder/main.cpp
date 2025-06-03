@@ -1,4 +1,4 @@
-// Copyright (C) 2024 Ashish Bhole.
+// Copyright (C) 2025 Ashish Bhole.
 // Licensed under the GNU LGPL Version 2.1.
 #define IO
 
@@ -157,7 +157,7 @@ int main(int argc, char **argv)
 
   Euler::LinearForm L(mesh, rho0, m0, E0, dt, tau_vms_rho, tau_vms_m, tau_vms_E, tau_sc_rho, tau_sc_m, tau_sc_E, tau_anis_sc_rho, tau_anis_sc_m, tau_anis_sc_E );
 
-  //a.assemble(A, true);
+  // need this function to correctly assemble boundary intergrals
   Assembler::assemble( A, a, sub_domains, boundaries, boundaries, true );
 
   uint step = 0;
@@ -166,11 +166,9 @@ int main(int argc, char **argv)
   {
     // Adjust dt to reach final time exactly
     if (t+tstep > Tfinal) dt = Tfinal - t;
-    //L.assemble(b, step==0);
+    // need this function to correctly assemble boundary intergrals
     Assembler::assemble(b, L, sub_domains, boundaries, boundaries, step==0);
-
     bc_inflow.apply( A, b, a );
-
     solver.solve(A, w1.vector(), b);
 
     w1.sync();
