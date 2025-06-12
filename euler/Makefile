@@ -5,14 +5,14 @@ CXX     = `pkg-config --variable=compiler dolfin`
 DEST    = demo
 OBJECTS = main.o
 
-DIR=/cfs/klemming/projects/snic/heartsolver/joel/euler3
+DIR=/cfs/klemming/projects/snic/heartsolver/joel/euler4
 
 all: $(DEST)
 
 install:
 	cp demo ${DIR}
 	cp submit.sh ${DIR}
-	cp box_mesh.bin ${DIR}
+	cp box_mesh_tall_refined.bin ${DIR}
 
 run:
 	(cd ${DIR} && sbatch submit.sh)

@@ -47,8 +47,8 @@ real zmin = 0.0;
 real zmax = 1.0;*/
 real xmin = 0.0;
 real xmax = 3.0;
-real ymin = -2.0;
-real ymax = 2.0;
+real ymin = -4.0;
+real ymax = 4.0;
 real zmin = -2.0;
 real zmax = 2.0;
 
@@ -422,24 +422,25 @@ void ComputeVolInv(Mesh& mesh, Function& vol_inv)
 }
 
 // Triple decomposition
-//void computeTripleDecomposition(Mesh& mesh, Gradientcomponents::BilinearForm& aGrad_x, Function& gradU_x, Function& gradU_y, Function& gradU_z, Function& triple_shear, Function& triple_strain, Function& triple_rotation)
 void computeTripleDecomposition(Mesh& mesh, Function& u, Function& vol_inv, Function& triple_shear, Function& triple_strain, Function& triple_rotation)
 {
+  auto u_components = u.decompose();
+
   // Compute gradient
   // It's not necessary to reallocate all of these every time, but u.decompose doesn't automatically update when u does.
   Gradientcomponents::BilinearForm aGrad_x(mesh);
-  Gradientcomponents::LinearForm LGrad_x(mesh, *(u.decompose()[0]), vol_inv);
-  Gradientcomponents::LinearForm LGrad_y(mesh, *(u.decompose()[1]), vol_inv);
-  Gradientcomponents::LinearForm LGrad_z(mesh, *(u.decompose()[2]), vol_inv);
+  Gradientcomponents::LinearForm LGrad_x(mesh, *u_components[0], vol_inv);
+  Gradientcomponents::LinearForm LGrad_y(mesh, *u_components[1], vol_inv);
+  Gradientcomponents::LinearForm LGrad_z(mesh, *u_components[2], vol_inv);
   Function gradU_x(aGrad_x.trial_space());
   Function gradU_y(aGrad_x.trial_space());
   Function gradU_z(aGrad_x.trial_space());
 
   // The above works for du/dx and du/dy, below is a work-around for du/dz
   Gradient_z::BilinearForm aGrad_ddz(mesh);
-  Gradient_z::LinearForm LGrad_dudz(mesh, *(u.decompose()[0]), vol_inv);
-  Gradient_z::LinearForm LGrad_dvdz(mesh, *(u.decompose()[1]), vol_inv);
-  Gradient_z::LinearForm LGrad_dwdz(mesh, *(u.decompose()[2]), vol_inv);
+  Gradient_z::LinearForm LGrad_dudz(mesh, *u_components[0], vol_inv);
+  Gradient_z::LinearForm LGrad_dvdz(mesh, *u_components[1], vol_inv);
+  Gradient_z::LinearForm LGrad_dwdz(mesh, *u_components[2], vol_inv);
   Function gradU_dudz(aGrad_ddz.trial_space());
   Function gradU_dvdz(aGrad_ddz.trial_space());
   Function gradU_dwdz(aGrad_ddz.trial_space());
@@ -538,12 +539,6 @@ void computeTripleDecomposition(Mesh& mesh, Function& u, Function& vol_inv, Func
   triple_rotation.sync();
   delete[] idx;
   delete[] gradU_block;
-
-//  if(dolfin::MPI::rank() == 64)
-//    for(int i = 0; i < gradU.vector().size(); i++)
-//      std::cout << gradU.vector()[i];
-//  File file("gradient.pvd");
-//  file << gradU;
 }
 
 int main(int argc, char* argv[])
@@ -555,7 +550,7 @@ int main(int argc, char* argv[])
   dolfin_set("NodeNormal dump types", true);
 
   // Read mesh
-  Mesh mesh("box_mesh_coarse.bin");
+  Mesh mesh("box_mesh_tall_refined.bin");
 
   // Print the mesh to new file, needed for dolfin-post
   File meshfile("meshfile.bin");
@@ -604,7 +599,7 @@ int main(int argc, char* argv[])
 
   // Put the boundary conditions in vectors
   std::vector<BoundaryCondition*> bc_con;
-  bc_con.push_back(&wall_con_bc);
+//  bc_con.push_back(&wall_con_bc);
   std::vector<BoundaryCondition*> bc_mom;
   bc_mom.push_back(&xy_slip_bc);
   bc_mom.push_back(&xz_slip_bc);
@@ -735,7 +730,7 @@ int main(int argc, char* argv[])
   solutionfile << output;
   #endif
 
-  int runs = 5;
+  int runs = 1;
 
   // Time stepping!
   for(int i = 0; i < runs; i++)
