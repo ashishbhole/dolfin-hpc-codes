@@ -916,24 +916,25 @@ void ComputeVolInv(Mesh& mesh, Function& vol_inv)
 }
 
 // Triple decomposition
-//void computeTripleDecomposition(Mesh& mesh, Gradientcomponents::BilinearForm& aGrad_x, Function& gradU_x, Function& gradU_y, Function& gradU_z, Function& triple_shear, Function& triple_strain, Function& triple_rotation)
 void computeTripleDecomposition(Mesh& mesh, Function& u, Function& vol_inv, Function& triple_shear, Function& triple_strain, Function& triple_rotation)
 {
+  auto u_components = u.decompose();
+
   // Compute gradient
   // It's not necessary to reallocate all of these every time, but u.decompose doesn't automatically update when u does.
   Gradientcomponents::BilinearForm aGrad_x(mesh);
-  Gradientcomponents::LinearForm LGrad_x(mesh, *(u.decompose()[0]), vol_inv);
-  Gradientcomponents::LinearForm LGrad_y(mesh, *(u.decompose()[1]), vol_inv);
-  Gradientcomponents::LinearForm LGrad_z(mesh, *(u.decompose()[2]), vol_inv);
+  Gradientcomponents::LinearForm LGrad_x(mesh, *u_components[0], vol_inv);
+  Gradientcomponents::LinearForm LGrad_y(mesh, *u_components[1], vol_inv);
+  Gradientcomponents::LinearForm LGrad_z(mesh, *u_components[2], vol_inv);
   Function gradU_x(aGrad_x.trial_space());
   Function gradU_y(aGrad_x.trial_space());
   Function gradU_z(aGrad_x.trial_space());
 
   // The above works for du/dx and du/dy, below is a work-around for du/dz
   Gradient_z::BilinearForm aGrad_ddz(mesh);
-  Gradient_z::LinearForm LGrad_dudz(mesh, *(u.decompose()[0]), vol_inv);
-  Gradient_z::LinearForm LGrad_dvdz(mesh, *(u.decompose()[1]), vol_inv);
-  Gradient_z::LinearForm LGrad_dwdz(mesh, *(u.decompose()[2]), vol_inv);
+  Gradient_z::LinearForm LGrad_dudz(mesh, *u_components[0], vol_inv);
+  Gradient_z::LinearForm LGrad_dvdz(mesh, *u_components[1], vol_inv);
+  Gradient_z::LinearForm LGrad_dwdz(mesh, *u_components[2], vol_inv);
   Function gradU_dudz(aGrad_ddz.trial_space());
   Function gradU_dvdz(aGrad_ddz.trial_space());
   Function gradU_dwdz(aGrad_ddz.trial_space());
@@ -1024,15 +1025,12 @@ void computeTripleDecomposition(Mesh& mesh, Function& u, Function& vol_inv, Func
     triple_strain.vector().set(&strain, 1, &global_index);
     triple_rotation.vector().set(&rotation, 1, &global_index);
   }
-
-  // Apply and sync ghosts
   triple_shear.vector().apply();
   triple_shear.sync();
   triple_strain.vector().apply();
   triple_strain.sync();
   triple_rotation.vector().apply();
   triple_rotation.sync();
-
   delete[] idx;
   delete[] gradU_block;
 }
@@ -1067,7 +1065,8 @@ int main(int argc, char* argv[])
 {
   dolfin_init(argc, argv);
   Mesh mesh("cylinder-ashish.bin"); // Made with gmsh extrude, suitable for 8 cores
-  
+//  Mesh mesh("dolfin_cylinder.bin");
+
   // Print the mesh to new file, needed for dolfin-post
   File meshfile("meshfile.bin");
   meshfile << mesh;
