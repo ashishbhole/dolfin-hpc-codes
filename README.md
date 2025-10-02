@@ -34,11 +34,17 @@ srun -n <np> ./exe <command line arguments if any>
 
 ## Notes:
 
-1) Internal mesh generators do not work with parallel I/O. It is better to export mesh in .bin format.
+1) Internal mesh generators do not work with parallel I/O. Mesh files need to be exported in .bin format.
    This can be done using 'dolfin_convert' that can be built along with dolfin-hpc.
    ```
    dolfin_convert mesh.xml mesh.bin
    ```
+
+   A popular meshing software is gmsh that writes mesh files into "msh" format. "dolfin_convert" from legacy FEniCs can be used conver msh into xml.
+   ```
+   dolfin_convert mesh.msh mesh.xml
+   ```
+
 
 2) If your application requires more than one FE forms, create a separate .ufl file for each.   
 
@@ -83,5 +89,5 @@ Load already available Parmetis module
 - configure, make, make install dolfin-hpc
 - add ```LD_LIBRARY_PATH```
 
-9) dolfin-convert:
+9) dolfin-convert (This program is available in dolfin-hpc/misc/utils/convert/):
 - configure, make, make install in ```dolfin-hpc/misc/convert``` dir
