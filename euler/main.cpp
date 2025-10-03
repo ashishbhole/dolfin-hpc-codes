@@ -21,6 +21,8 @@
 #include "Gradientcomponents.h"
 #include "Gradient_z.h"
 #include "Residual.h"
+#include "Poisson.h"
+#include "Gradient_phi.h"
 
 #include <cmath> // For sin, cos and pi
 #include <sstream> // For printing
@@ -31,7 +33,7 @@ using namespace dolfin;
 
 real bmarg = 1.0e-3 + DOLFIN_EPS;
 
-real Tfinal = 20.0;
+real Tfinal = 100.0;
 real ubar = 1.0; // Free stream velocity
 real ubar_max = 1.0;
 
@@ -39,12 +41,6 @@ real vortex_diameter = 1.0;
 
 real viscosity = 0.0; // Could just remove the term in the form file instead
 
-/*real xmin = 0.0; 
-real xmax = 10.0;
-real ymin = 0.0;
-real ymax = 1.0;
-real zmin = 0.0;
-real zmax = 1.0;*/
 real xmin = 0.0;
 real xmax = 3.0;
 real ymin = -4.0;
@@ -70,7 +66,7 @@ class VortexDomain : public SubDomain
 public:
   bool inside(const real* p, bool on_boundary) const
   {
-    return(std::abs(p[1]) <= vortex_diameter/2 && std::abs(p[2]) <= vortex_diameter);
+    return(std::abs(p[1]-0.5) <= vortex_diameter/2 && std::abs(p[2]) <= vortex_diameter);
   }
 };
 
@@ -130,8 +126,32 @@ struct BC_Momentum : public Value<BC_Momentum, 3>
 {
   void eval(real* value, const real* x) const
   {
-    value[1] = std::sin((x[2] - vortex_diameter/2) * M_PI / vortex_diameter) * std::cos((x[1]) * M_PI / vortex_diameter);
-    value[2] = -std::cos((x[2] - vortex_diameter/2) * M_PI / vortex_diameter) * std::sin((x[1]) * M_PI / vortex_diameter);
+    value[1] = std::sin((x[2] - vortex_diameter/2) * M_PI / vortex_diameter) * std::cos((x[1]-0.5) * M_PI / vortex_diameter);
+    value[2] = -std::cos((x[2] - vortex_diameter/2) * M_PI / vortex_diameter) * std::sin((x[1]-0.5) * M_PI / vortex_diameter);
+  }
+};
+
+// Boundary condition for inducing Taylor-Green vortices with a smoother edge than above
+struct BC_Momentum_Smooth : public Value<BC_Momentum_Smooth, 3>
+{
+  const real delta = 0.1;
+
+  void eval(real* value, const real* x) const
+  {
+    auto clip = [](real val, real a, real b) {
+      return std::min(std::max(val, a), b);
+    };
+
+    real wx = 0.5 * (1.0 + std::cos(M_PI * clip((std::abs(x[2]) - 1.0 + delta) / delta, 0.0, 1.0)));
+    real wy = 0.5 * (1.0 + std::cos(M_PI * clip((std::abs(x[1]) - 0.5 + delta) / delta, 0.0, 1.0)));
+
+    real region = wx * wy;
+
+    // Vortex pattern (same as your original)
+    value[1] = std::sin((x[2] - vortex_diameter/2) * M_PI / vortex_diameter) *
+               std::cos(x[1] * M_PI / vortex_diameter) * region;
+    value[2] = -std::cos((x[2] - vortex_diameter/2) * M_PI / vortex_diameter) *
+                std::sin(x[1] * M_PI / vortex_diameter) * region;
   }
 };
 
@@ -541,6 +561,51 @@ void computeTripleDecomposition(Mesh& mesh, Function& u, Function& vol_inv, Func
   delete[] gradU_block;
 }
 
+// Smooth initial condition to ensure divergence is zero
+void initial_smoothing(Mesh& mesh, Function& u, Function& vol_inv)
+{
+  // Solve Poisson equation for div(grad(phi))=div(u)
+  XY_Plane xy_plane;
+  XZ_Plane xz_plane;
+  Constant zero(0.0);
+  DirichletBC bc_xy(zero, mesh, xy_plane);
+  DirichletBC bc_xz(zero, mesh, xz_plane);
+
+  Poisson::BilinearForm a(mesh);
+  Poisson::LinearForm L(mesh, u);
+
+  Function phi(a.trial_space());
+
+  Matrix A;
+  Vector b;
+
+  a.assemble(A, true);
+  L.assemble(b, true);
+  bc_xy.apply(A, b, a);
+  bc_xz.apply(A, b, a);
+
+  KrylovSolver solver(gmres, amg);
+  solver.solve(A, phi.vector(), b);
+
+  // Sync, when should this be done?
+  phi.sync();
+
+  // Compute grad(phi)
+  Gradient_phi::BilinearForm aGrad(mesh);
+  Gradient_phi::LinearForm LGrad(mesh, phi, vol_inv);
+  Function grad_phi(aGrad.trial_space());
+  LGrad.assemble(grad_phi.vector(), false);
+
+  // Sync again?
+  grad_phi.sync();
+
+  // Set smoothed initial condition to u_divfree=u-grad(phi)
+  u.vector() -= grad_phi.vector();
+
+  // Sync again?
+  u.sync();
+}
+
 int main(int argc, char* argv[])
 {
   // Initialize
@@ -574,6 +639,7 @@ int main(int argc, char* argv[])
   Analytic<ZeroVelocity> zero_velocity(mesh);
   Analytic<BC_Continuity> zero_1d(mesh);
   Analytic<BC_Momentum> boundary_vortex(mesh);
+  Analytic<BC_Momentum_Smooth> boundary_vortex_smooth(mesh);
   
   // Define boundaries
   VortexBoundary vortex_boundary; // Only boundary
@@ -607,6 +673,7 @@ int main(int argc, char* argv[])
 
   // Initial velocity for whole domain. Defined as a DirichletBC, but applied to internal points too
   DirichletBC vortex_initial(boundary_vortex, mesh, vortex_domain);
+//  DirichletBC vortex_initial(boundary_vortex_smooth, mesh, vortex_domain);
 
 
   // Set up functions. Not sure what should be Constant or Function
@@ -683,15 +750,6 @@ int main(int argc, char* argv[])
   Gradient::BilinearForm aGrad(mesh);
   Gradient::LinearForm LGrad(mesh, u, vol_inv);
 
-  // Create velocity gradients per component
-/*  Gradientcomponents::BilinearForm aGrad_x(mesh);
-  Gradientcomponents::LinearForm LGrad_x(mesh, *(u.decompose()[0]), vol_inv);
-  Gradientcomponents::LinearForm LGrad_y(mesh, *(u.decompose()[1]), vol_inv);
-  Gradientcomponents::LinearForm LGrad_z(mesh, *(u.decompose()[2]), vol_inv);
-  Function gradU_x(aGrad_x.trial_space());
-  Function gradU_y(aGrad_x.trial_space());
-  Function gradU_z(aGrad_x.trial_space());
-*/
   // Initialize functions with the appropriate FE space
   vol_inv.init(LGrad.create_coefficient_space("icv"));
   triple_shear.init(LGrad.create_coefficient_space("icv"));
@@ -711,24 +769,15 @@ int main(int argc, char* argv[])
   Label<Function> sh_output(triple_shear, "Shear");
   Label<Function> el_output(triple_strain, "Strain");
   Label<Function> rr_output(triple_rotation, "Rotation");
-  Label<Function> res_output(residual_cell, "Residual");
-  Label<Function> icv_output(vol_inv, "Inverse Volume");
   output.push_back(u_output);
   output.push_back(p_output);
   output.push_back(sh_output);
   output.push_back(el_output);
   output.push_back(rr_output);
-  output.push_back(res_output);
-  output.push_back(icv_output);
 
   // Debugging files
 //  File residual_file("residual.pvd");
 //  residual_file << output;
-
-  // write the initial condition to the solution file
-  #ifdef IO
-  solutionfile << output;
-  #endif
 
   int runs = 1;
 
@@ -778,6 +827,9 @@ int main(int argc, char* argv[])
       {
         // Set initial condition. This is easier than initial conditions the normal way
         vortex_initial.apply(A_mom, u.vector(), a_mom);
+        u.sync();
+        // Smooth cut-off in the initial condition to ensure divergence is zero
+//        initial_smoothing(mesh, u, vol_inv);
         break;
       }
       else
@@ -838,55 +890,8 @@ int main(int argc, char* argv[])
     step++;
     #ifdef IO
     real prints_per_sec = 10; // How many times to print per simulated second
-    if(step < 10 || std::floor(prints_per_sec*t) > std::floor(prints_per_sec*(t-tstep))) // Print the 100 first timesteps, then some times per simulated second
+    if(step < 10 || std::floor(prints_per_sec*t) > std::floor(prints_per_sec*(t-tstep))) // Print the 10 first timesteps, then some times per simulated second
     {
-/*      // It's not necessary to reallocate all of these every time, but u.decompose doesn't automatically update when u does.
-      Gradientcomponents::BilinearForm aGrad_x(mesh);
-      Gradientcomponents::LinearForm LGrad_x(mesh, *(u.decompose()[0]), vol_inv);
-      Gradientcomponents::LinearForm LGrad_y(mesh, *(u.decompose()[1]), vol_inv);
-      Gradientcomponents::LinearForm LGrad_z(mesh, *(u.decompose()[2]), vol_inv);
-      Function gradU_x(aGrad_x.trial_space());
-      Function gradU_y(aGrad_x.trial_space());
-      Function gradU_z(aGrad_x.trial_space());
-
-      // The above works for du/dx and du/dy, below is a work-around for du/dz
-      Gradient_z::BilinearForm aGrad_dudz(mesh);
-      Gradient_z::LinearForm LGrad_dudz(mesh, *(u.decompose()[0]), vol_inv);
-      Gradient_z::LinearForm LGrad_dvdz(mesh, *(u.decompose()[1]), vol_inv);
-      Gradient_z::LinearForm LGrad_dwdz(mesh, *(u.decompose()[2]), vol_inv);
-      Function gradU_dudz(aGrad_dudz.trial_space());
-      Function gradU_dvdz(aGrad_dudz.trial_space());
-      Function gradU_dwdz(aGrad_dudz.trial_space());
-
-      // Compute velocity gradient
-      LGrad_x.assemble(gradU_x.vector(), false);
-      LGrad_y.assemble(gradU_y.vector(), false);
-      LGrad_z.assemble(gradU_z.vector(), false);
-
-      // z work-around
-      LGrad_dudz.assemble(gradU_dudz.vector(), false);
-      LGrad_dvdz.assemble(gradU_dvdz.vector(), false);
-      LGrad_dwdz.assemble(gradU_dwdz.vector(), false);
-
-      // Print the gradients to file, for debugging purposes. Can remove later
-      File grad_x_file("gradient_x.pvd");
-      File grad_y_file("gradient_y.pvd");
-      File grad_z_file("gradient_z.pvd");
-      grad_x_file << gradU_x;
-      grad_y_file << gradU_y;
-      grad_z_file << gradU_z;
-
-      // z work-around print
-      File dudz_file("dudz.pvd");
-      File dvdz_file("dvdz.pvd");
-      File dwdz_file("dwdz.pvd");
-      dudz_file << gradU_dudz;
-      dvdz_file << gradU_dvdz;
-      dwdz_file << gradU_dwdz;
-  
-      // Compute triple decomposition
-      computeTripleDecomposition(mesh, aGrad_x, gradU_x, gradU_y, gradU_z, triple_shear, triple_strain, triple_rotation);
-*/
       computeTripleDecomposition(mesh, u, vol_inv, triple_shear, triple_strain, triple_rotation);
 
       solutionfile << output;
